@@ -1,0 +1,83 @@
+-- Add tags[] and summary columns to all entity tables for AI-optimized search
+
+ALTER TABLE creatures ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE creatures ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE items ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE items ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE spells ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE spells ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE npcs ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE npcs ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE quests ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE quests ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE achievements ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE achievements ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE mounts ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE mounts ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE outfits ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE outfits ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE imbuements ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE imbuements ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE hunts ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE hunts ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE books ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE books ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE buildings ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE buildings ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE worlds ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE worlds ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE runes ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE runes ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE world_quests ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE world_quests ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE world_changes ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE world_changes ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE familiars ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE familiars ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE updates ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE updates ADD COLUMN IF NOT EXISTS summary TEXT;
+
+ALTER TABLE fansites ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE fansites ADD COLUMN IF NOT EXISTS summary TEXT;
+
+-- GIN index on tags for fast array containment queries (@> operator)
+CREATE INDEX IF NOT EXISTS idx_creatures_tags ON creatures USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_items_tags ON items USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_spells_tags ON spells USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_npcs_tags ON npcs USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_quests_tags ON quests USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_achievements_tags ON achievements USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_mounts_tags ON mounts USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_outfits_tags ON outfits USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_imbuements_tags ON imbuements USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_hunts_tags ON hunts USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_books_tags ON books USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_buildings_tags ON buildings USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_worlds_tags ON worlds USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_runes_tags ON runes USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_world_quests_tags ON world_quests USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_world_changes_tags ON world_changes USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_familiars_tags ON familiars USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_tasks_tags ON tasks USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_updates_tags ON updates USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_fansites_tags ON fansites USING GIN (tags);

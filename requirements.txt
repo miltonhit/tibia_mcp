@@ -2,3 +2,10 @@ psycopg2-binary==2.9.9
 requests==2.31.0
 python-dotenv==1.0.1
 mcp>=1.0.0
+
+# Optional: semantic search with LlamaIndex (uncomment to enable)
+# llama-index
+# llama-index-vector-stores-postgres
+# llama-index-embeddings-huggingface
+# sentence-transformers
+# pgvector

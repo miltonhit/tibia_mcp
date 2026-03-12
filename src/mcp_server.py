@@ -1,8 +1,8 @@
-"""MCP Server for TibiaWiki database.
+"""MCP Server for TibiaWiki database — optimized for AI agents.
 
-Exposes the PostgreSQL database as tools for AI chat integration via SSE.
-Supports querying creatures, items, spells, NPCs, quests, and more,
-with intelligent cross-entity search and relationship analysis.
+Browse & Drill architecture: discover → filter → detail.
+Compact mode by default to minimize context usage.
+~17 tools instead of 35+.
 """
 
 import json
@@ -18,53 +18,48 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("TibiaWiki", instructions="""
-You have access to a comprehensive TibiaWiki database with information about
-the MMORPG Tibia. This covers ALL content from the wiki including:
-
-ENTITIES: creatures, items, spells, NPCs, quests, achievements, mounts,
-outfits, imbuements, hunting places, books/lore, buildings/houses, game worlds,
+You have access to a comprehensive TibiaWiki database (tibiawiki.com.br).
+Covers ALL Tibia MMORPG content: creatures, items, spells, NPCs, quests,
+achievements, mounts, outfits, imbuements, hunts, books, buildings, worlds,
 runes, world quests, world changes, familiars, tasks, updates, fansites.
 
-MAP & POSITIONS: Every entity with coordinates has them stored in a positions
-table. You can search by coordinates, find nearby entities, calculate distances.
+## HOW TO USE (follow this workflow):
 
-SMART TOOLS (use these first):
-- smart_search: Global keyword search across ALL 20 tables. Use when unsure which entity type to search.
-- creature_full_info: Complete creature profile with loot, hunts, and sell locations.
-- where_to_get_item: Find all sources for an item (creature drops + NPC shops).
-- where_to_sell_item: Find NPCs that buy a specific item, with city and price.
-- recommend_hunt: Get hunt recommendations for a level/vocation combo.
-- profit_analysis: Estimate gold/kill for a creature based on NPC loot prices.
-- creature_weakness: Find creatures vulnerable to a specific damage element.
-- items_for_vocation: Find equipment for a specific vocation.
+1. DISCOVER what exists:
+   -> describe_tables() - see all tables, row counts, column schemas
+   -> list_entities(type, limit=25) - browse names with pagination
 
-MAP & POSITION TOOLS:
-- get_map_url: Generate TibiaWiki map URL for coordinates.
-- search_by_position: Find entities near a map position (x, y, z).
-- nearby_entities: Find what's close to a named entity on the map.
-- positions_in_area: Find all entities within a rectangular map area.
+2. SEARCH by keyword:
+   -> search(query, entity_type?) - returns COMPACT results (name + key fields)
+   -> Omit entity_type to search ALL tables at once.
+   -> Use search_by_tags(type, tags) for tag-based filtering.
 
-NEW ENTITY SEARCH TOOLS:
-- search_book: Search books/lore by name or content.
-- search_building: Search houses/buildings by name, street, or city.
-- search_world: Search game worlds/servers.
-- search_rune: Search runes by name or damage type.
-- search_world_quest: Search world quests/events.
-- search_world_change: Search world changes.
-- search_familiar: Search familiars by name or vocation.
-- search_task: Search tasks.
-- search_update: Search game updates by version or content.
+3. GET FULL DETAILS for a specific entity:
+   -> get_entity(type, name) - returns ALL fields for one entity
 
-BASIC SEARCH TOOLS:
-- search_creature, search_item, search_spell, search_npc, search_quest
-- search_achievement, search_mount, search_hunt
-- compare_creatures
+4. USE SMART TOOLS for complex cross-entity questions:
+   -> creature_full_info(name) - stats + loot + hunts + sell prices
+   -> where_to_get_item(name) - drops + NPC shops
+   -> where_to_sell_item(name) - NPCs that buy it
+   -> recommend_hunt(level, vocation) - best hunts for your level
+   -> profit_analysis(creature) - estimated gold/kill
+   -> creature_weakness(element) - creatures weak to an element
+   -> items_for_vocation(vocation) - equipment for your class
+   -> compare_creatures(name1, name2) - side-by-side comparison
 
-ADVANCED:
-- query_database: Raw SQL SELECT for custom queries.
-- get_database_stats: Row counts for all tables.
+5. MAP & POSITIONS:
+   -> get_map_url(x, y, z) - TibiaWiki map link
+   -> search_by_position(x, y, z, radius) - entities near coordinates
+   -> nearby_entities(name, radius) - entities near a named entity
 
-Data from https://www.tibiawiki.com.br/
+6. SEMANTIC SEARCH (if available):
+   -> semantic_search(question) - natural language search via embeddings
+
+7. CUSTOM QUERIES:
+   -> query_database(sql) - raw SQL SELECT for anything else
+
+IMPORTANT: ALWAYS start with compact search. Only get_entity for 1-2 specific
+entities. Never request full details on broad queries — it wastes context.
 """)
 
 
@@ -87,7 +82,7 @@ def _query(sql, params=None, limit=20):
 
 
 def _format(rows):
-    """Format query results as readable text."""
+    """Format query results as readable JSON text."""
     if not rows:
         return "No results found."
     return json.dumps(rows, ensure_ascii=False, indent=2, default=str)
@@ -119,86 +114,380 @@ def _has_column(table_name, column_name):
         return False
 
 
-# ─── SMART TOOLS ───────────────────────────────────────────────────
+# Compact columns per table — name + 2-4 key fields for search results
+COMPACT_COLUMNS = {
+    "creatures": ["name", "hp", "exp", "creature_class", "primary_type", "summary"],
+    "items": ["name", "item_class", "primary_type", "armor", "attack", "defense", "npc_value", "summary"],
+    "spells": ["name", "words", "subclass", "mana", "mag_level", "vocations", "magic_type"],
+    "npcs": ["name", "job", "city", "subarea"],
+    "quests": ["name", "level", "reward", "location", "premium"],
+    "achievements": ["name", "grade", "points", "description"],
+    "mounts": ["name", "speed", "premium", "method"],
+    "outfits": ["name", "premium"],
+    "imbuements": ["name"],
+    "hunts": ["name", "city", "level", "exp_rating", "loot_rating", "vocation"],
+    "books": ["name", "title", "author", "location"],
+    "buildings": ["name", "building_type", "street", "size", "beds", "rent", "payrent"],
+    "worlds": ["name", "world_type", "location", "battleye"],
+    "runes": ["name", "damage_type", "words", "level_required", "npc_price"],
+    "world_quests": ["name", "quest_type", "frequency", "level"],
+    "world_changes": ["name", "change_type", "frequency"],
+    "familiars": ["name", "hp", "vocation"],
+    "tasks": ["name", "reward", "location", "level"],
+    "updates": ["name", "update_version"],
+    "fansites": ["name", "fansite_type", "language"],
+}
+
+ALL_ENTITY_TABLES = list(COMPACT_COLUMNS.keys())
+
+
+def _compact_select(table):
+    """Build SELECT clause using only compact columns that exist."""
+    desired = COMPACT_COLUMNS.get(table, ["name"])
+    # Always include name, filter to existing columns
+    cols = [c for c in desired if _has_column(table, c)]
+    if not cols:
+        cols = ["name"]
+    return ", ".join(cols)
+
+
+# ─── DISCOVERY TOOLS ──────────────────────────────────────────────
 
 @mcp.tool()
-def smart_search(query: str) -> str:
-    """Global intelligent search across ALL TibiaWiki tables.
+def describe_tables(table_name: str = "") -> str:
+    """Show available tables, row counts, and column schemas.
 
-    Searches creatures, items, spells, NPCs, quests, achievements, hunts,
-    books, buildings, worlds, runes, world_quests, world_changes, familiars,
-    tasks, updates, fansites using full-text search with relevance ranking.
-    Use this when you don't know which entity type to look for.
+    Without table_name: lists all tables with row counts and descriptions.
+    With table_name: shows full column list with types for that table.
 
     Args:
-        query: Keywords to search for (e.g. "fire dragon", "ice protection", "thais quest")
+        table_name: Optional specific table to describe (e.g. "creatures", "items")
     """
+    if table_name:
+        if not _has_table(table_name):
+            return f"Table '{table_name}' not found."
+
+        cols = _query(
+            "SELECT column_name, data_type, is_nullable "
+            "FROM information_schema.columns "
+            "WHERE table_name = %s ORDER BY ordinal_position",
+            (table_name,), limit=100
+        )
+
+        count = _query(f"SELECT count(*) as cnt FROM {table_name}", limit=1)
+        cnt = count[0]["cnt"] if count else "?"
+
+        return json.dumps({
+            "table": table_name,
+            "row_count": cnt,
+            "columns": cols,
+        }, indent=2, default=str)
+
+    # List all tables with counts
+    table_descriptions = {
+        "creatures": "Monsters, bosses, NPCs with stats, loot, elemental mods",
+        "items": "Equipment, tools, quest items with stats and prices",
+        "spells": "Magic spells with incantation words, mana cost, vocations",
+        "npcs": "Non-player characters with jobs, locations, buy/sell lists",
+        "quests": "Quest guides with level reqs, rewards, bosses, spoilers",
+        "achievements": "In-game achievements with grade, points, descriptions",
+        "mounts": "Rideable mounts with speed bonus and obtain method",
+        "outfits": "Character outfits/appearances",
+        "imbuements": "Item imbuement enchantments",
+        "hunts": "Hunting places with level range, exp/loot ratings, creatures",
+        "books": "In-game books with lore text, authors, locations",
+        "buildings": "Houses/guildhalls with size, rent, beds, locations",
+        "worlds": "Game servers with PvP type, location, BattlEye status",
+        "runes": "Magic runes with damage type, craft cost, prices",
+        "world_quests": "Server-wide periodic events (e.g. Lightbearer)",
+        "world_changes": "Dynamic world events that alter the game",
+        "familiars": "Summonable companion creatures per vocation",
+        "tasks": "Repeatable hunting tasks from NPCs",
+        "updates": "Game version history and patch notes",
+        "fansites": "Community fansites recognized by CipSoft",
+        "positions": "Map coordinates (x, y, z) for entities",
+    }
+
+    stats = {}
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            for table in list(table_descriptions.keys()):
+                try:
+                    cur.execute(f"SELECT count(*) as cnt FROM {table}")
+                    cnt = cur.fetchone()["cnt"]
+                    stats[table] = {
+                        "rows": cnt,
+                        "description": table_descriptions.get(table, ""),
+                    }
+                except Exception:
+                    conn.rollback()
+    finally:
+        conn.close()
+
+    # Also show materialized views
+    views = {
+        "creature_drops": "Which creatures drop which items (with rarity)",
+        "npc_trades": "Which NPCs buy/sell which items",
+        "hunt_creatures": "Which creatures appear in which hunting places",
+        "quest_bosses": "Which bosses appear in which quests",
+    }
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            for view, desc in views.items():
+                try:
+                    cur.execute(f"SELECT count(*) as cnt FROM {view}")
+                    cnt = cur.fetchone()["cnt"]
+                    stats[f"[view] {view}"] = {"rows": cnt, "description": desc}
+                except Exception:
+                    conn.rollback()
+    finally:
+        conn.close()
+
+    return json.dumps(stats, indent=2, default=str)
+
+
+@mcp.tool()
+def list_entities(entity_type: str, limit: int = 25, offset: int = 0,
+                  sort_by: str = "name", filter: str = "") -> str:
+    """List entities of a given type with pagination. Returns ONLY names and key identifiers.
+
+    Use this to browse what exists, then get_entity() for details.
+
+    Args:
+        entity_type: Table name (creatures, items, npcs, hunts, etc.)
+        limit: Results per page (max 50, default 25)
+        offset: Skip first N results for pagination
+        sort_by: Column to sort by (default "name")
+        filter: Optional ILIKE filter on name (e.g. "dragon%", "%sword%")
+    """
+    if entity_type not in ALL_ENTITY_TABLES:
+        return f"Invalid entity_type '{entity_type}'. Valid: {', '.join(ALL_ENTITY_TABLES)}"
+
+    if not _has_table(entity_type):
+        return f"Table '{entity_type}' not available. Run the importer first."
+
+    limit = min(limit, 50)
+    cols = _compact_select(entity_type)
+
+    # Validate sort column
+    if not _has_column(entity_type, sort_by):
+        sort_by = "name"
+
+    conditions = []
+    params = []
+
+    if filter:
+        conditions.append("name ILIKE %s")
+        params.append(filter)
+
+    where = " AND ".join(conditions) if conditions else "TRUE"
+    params.extend([limit, offset])
+
+    rows = _query(
+        f"SELECT {cols} FROM {entity_type} WHERE {where} "
+        f"ORDER BY {sort_by} LIMIT %s OFFSET %s",
+        params,
+        limit=limit,
+    )
+
+    # Get total count for pagination info
+    count_rows = _query(
+        f"SELECT count(*) as total FROM {entity_type} WHERE {where}",
+        params[:-2] if params[:-2] else None,
+        limit=1,
+    )
+    total = count_rows[0]["total"] if count_rows else "?"
+
+    return json.dumps({
+        "entity_type": entity_type,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": (offset + limit) < total if isinstance(total, int) else True,
+        "results": rows,
+    }, ensure_ascii=False, indent=2, default=str)
+
+
+# ─── UNIFIED SEARCH ────────────────────────────────────────────────
+
+@mcp.tool()
+def search(query: str, entity_type: str = "", detail: bool = False,
+           limit: int = 10, offset: int = 0) -> str:
+    """Search for any entity in the TibiaWiki database.
+
+    COMPACT MODE (default): Returns name + 2-3 key fields per result.
+    Use this to find entities, then use get_entity() for full details.
+
+    DETAIL MODE (detail=True): Returns all fields. Use sparingly — only
+    when you need full info and know there are few results.
+
+    Args:
+        query: Search keywords (e.g. "dragon", "fire sword", "thais")
+        entity_type: Filter to specific type. Empty = search all types.
+            Options: creatures, items, spells, npcs, quests, achievements,
+            mounts, hunts, books, buildings, worlds, runes, world_quests,
+            world_changes, familiars, tasks, updates, fansites
+        detail: False=compact (default), True=full details
+        limit: Max results per type (default 10, max 50)
+        offset: Skip N results for pagination
+    """
+    limit = min(limit, 50)
+    tables_to_search = [entity_type] if entity_type else ALL_ENTITY_TABLES
+
     results = {}
 
-    fts_tables = [
-        ("creatures", "name", ["hp", "exp", "creature_class", "primary_type"]),
-        ("items", "name", ["item_class", "primary_type", "npc_value"]),
-        ("spells", "name", ["words", "subclass", "mana", "magic_type"]),
-        ("npcs", "name", ["job", "city"]),
-        ("quests", "name", ["level", "reward", "location"]),
-        ("achievements", "name", ["grade", "points", "description"]),
-        ("hunts", "name", ["city", "level", "exp_rating", "loot_rating"]),
-        ("books", "name", ["author", "blurb", "location"]),
-        ("buildings", "name", ["building_type", "street", "payrent"]),
-        ("worlds", "name", ["world_type", "location", "battleye"]),
-        ("runes", "name", ["subclass", "damage_type", "words"]),
-        ("world_quests", "name", ["quest_type", "frequency", "reward"]),
-        ("world_changes", "name", ["change_type", "frequency", "reward"]),
-        ("familiars", "name", ["vocation", "hp"]),
-        ("tasks", "name", ["reward", "location"]),
-        ("updates", "name", ["update_version"]),
-        ("fansites", "name", ["fansite_type", "language"]),
-    ]
-
-    for table, name_col, extra_cols in fts_tables:
+    for table in tables_to_search:
         if not _has_table(table):
             continue
 
-        cols = ", ".join([name_col] + [c for c in extra_cols if _has_column(table, c)])
+        cols = "*" if detail else _compact_select(table)
+        per_table_limit = limit if entity_type else min(limit, 5)
 
+        # Try FTS first, fallback to ILIKE
         if _has_column(table, "search_vector"):
             rows = _query(
                 f"SELECT {cols}, "
                 f"ts_rank(search_vector, plainto_tsquery('simple', %s)) AS relevance "
                 f"FROM {table} "
                 f"WHERE search_vector @@ plainto_tsquery('simple', %s) "
-                f"ORDER BY relevance DESC LIMIT 5",
-                (query, query), limit=5
+                f"ORDER BY relevance DESC LIMIT %s OFFSET %s",
+                (query, query, per_table_limit, offset),
+                limit=per_table_limit,
             )
         else:
             rows = _query(
                 f"SELECT {cols} FROM {table} "
-                f"WHERE {name_col} ILIKE %s ORDER BY {name_col} LIMIT 5",
-                (f"%{query}%",), limit=5
+                f"WHERE name ILIKE %s ORDER BY name LIMIT %s OFFSET %s",
+                (f"%{query}%", per_table_limit, offset),
+                limit=per_table_limit,
             )
 
         if rows:
+            # Remove the relevance score from output
+            for r in rows:
+                r.pop("relevance", None)
             results[table] = rows
 
     if not results:
-        return f"No results found for '{query}'. Try different keywords or use a specific search tool."
+        return f"No results found for '{query}'. Try different keywords or check entity_type."
 
-    output = []
+    if entity_type:
+        # Single table search — flat result
+        return json.dumps({
+            "entity_type": entity_type,
+            "query": query,
+            "results": results.get(entity_type, []),
+        }, ensure_ascii=False, indent=2, default=str)
+
+    # Multi-table — grouped
+    output = {"query": query, "results_by_type": {}}
     for table, rows in results.items():
-        output.append(f"=== {table.upper()} ({len(rows)} matches) ===")
-        output.append(json.dumps(rows, ensure_ascii=False, indent=2, default=str))
-    return "\n\n".join(output)
+        output["results_by_type"][table] = {
+            "count": len(rows),
+            "matches": rows,
+        }
+    return json.dumps(output, ensure_ascii=False, indent=2, default=str)
 
 
 @mcp.tool()
-def creature_full_info(name: str) -> str:
-    """Get complete information about a creature including stats, loot, hunts, and where to sell drops.
+def get_entity(entity_type: str, name: str) -> str:
+    """Get FULL details for a single entity by exact or partial name.
 
-    This combines creature stats + loot analysis + hunt locations + NPC sell prices
-    into a single comprehensive response.
+    Use this after finding the entity name via search() or list_entities().
+    Returns ALL fields including long text content.
+
+    Args:
+        entity_type: Table name (creatures, items, npcs, etc.)
+        name: Entity name (exact or partial match, e.g. "Dragon Lord")
+    """
+    if entity_type not in ALL_ENTITY_TABLES:
+        return f"Invalid entity_type '{entity_type}'. Valid: {', '.join(ALL_ENTITY_TABLES)}"
+
+    if not _has_table(entity_type):
+        return f"Table '{entity_type}' not available."
+
+    rows = _query(
+        f"SELECT * FROM {entity_type} WHERE name ILIKE %s "
+        f"ORDER BY CASE WHEN name ILIKE %s THEN 0 ELSE 1 END, name LIMIT 1",
+        (f"%{name}%", name),
+    )
+
+    if not rows:
+        return f"No {entity_type} found matching '{name}'."
+
+    entity = rows[0]
+
+    # Add tags if available
+    if _has_column(entity_type, "tags") and entity.get("tags"):
+        entity["tags"] = entity["tags"]
+
+    # Add positions if available
+    positions = _query(
+        "SELECT x, y, z, context FROM positions WHERE entity_name = %s AND source_table = %s",
+        (entity.get("name", name), entity_type),
+        limit=10,
+    )
+    if positions:
+        entity["map_positions"] = positions
+        for p in positions:
+            p["map_url"] = f"https://www.tibiawiki.com.br/wiki/Mapper?coords={p['x']},{p['y']},{p['z']},3"
+
+    return json.dumps(entity, ensure_ascii=False, indent=2, default=str)
+
+
+@mcp.tool()
+def search_by_tags(entity_type: str, tags: list, limit: int = 20) -> str:
+    """Find entities that match ALL given tags. Returns compact results.
+
+    Tags are generated automatically from entity data. Examples:
+    - creatures: boss, high_hp, high_exp, weak_to_fire, immune_to_death, illusionable, has_rare_loot
+    - items: high_tier, imbueable, equipment, weapon, shield, valuable, body_position
+    - spells: knight, sorcerer, druid, paladin, premium
+    - hunts: great_exp, great_loot, knight, paladin, city_name
+    - npcs: buys_items, sells_items, city_name
+    - quests: premium, high_level, has_bosses
+
+    Args:
+        entity_type: Table name (creatures, items, hunts, etc.)
+        tags: List of tags to match (ALL must match)
+        limit: Max results (default 20, max 50)
+    """
+    if entity_type not in ALL_ENTITY_TABLES:
+        return f"Invalid entity_type. Valid: {', '.join(ALL_ENTITY_TABLES)}"
+
+    if not _has_table(entity_type) or not _has_column(entity_type, "tags"):
+        return f"Tags not available for '{entity_type}'. Use search() instead."
+
+    limit = min(limit, 50)
+    cols = _compact_select(entity_type)
+
+    # PostgreSQL array containment: tags @> ARRAY[...]
+    rows = _query(
+        f"SELECT {cols} FROM {entity_type} "
+        f"WHERE tags @> %s::text[] ORDER BY name LIMIT %s",
+        (tags, limit),
+        limit=limit,
+    )
+
+    return json.dumps({
+        "entity_type": entity_type,
+        "tags_filter": tags,
+        "count": len(rows),
+        "results": rows,
+    }, ensure_ascii=False, indent=2, default=str)
+
+
+# ─── SMART TOOLS ───────────────────────────────────────────────────
+
+@mcp.tool()
+def creature_full_info(name: str, compact: bool = False) -> str:
+    """Get complete creature profile: stats, loot with sell prices, hunting places, quest appearances.
 
     Args:
         name: Creature name (e.g. "Dragon", "Demon", "Hydra")
+        compact: True = stats summary + loot names only. False (default) = full details.
     """
     creatures = _query(
         "SELECT * FROM creatures WHERE name ILIKE %s ORDER BY "
@@ -209,9 +498,27 @@ def creature_full_info(name: str) -> str:
         return f"Creature '{name}' not found."
 
     creature = creatures[0]
-    result = {"creature": creature}
-
     creature_name = creature["name"]
+
+    if compact:
+        result = {
+            "name": creature_name,
+            "hp": creature["hp"],
+            "exp": creature["exp"],
+            "speed": creature.get("speed"),
+            "class": creature.get("creature_class"),
+            "type": creature.get("primary_type"),
+        }
+        # Add element mods as compact dict
+        mods = {}
+        for elem in ("physical", "earth", "fire", "death", "energy", "holy", "ice"):
+            val = creature.get(f"{elem}_mod")
+            if val is not None and val != 100:
+                mods[elem] = val
+        if mods:
+            result["element_mods"] = mods
+    else:
+        result = {"creature": creature}
 
     if _has_table("creature_drops"):
         loot = _query(
@@ -223,7 +530,10 @@ def creature_full_info(name: str) -> str:
             "  WHEN 'very_rare' THEN 5 END",
             (creature_name,), limit=50
         )
-        result["loot_with_prices"] = loot
+        if compact:
+            result["loot"] = [f"{l['item_name']} ({l['rarity']}, {l.get('npc_value', '?')}gp)" for l in loot]
+        else:
+            result["loot_with_prices"] = loot
 
     if _has_table("hunt_creatures"):
         hunts = _query(
@@ -231,7 +541,10 @@ def creature_full_info(name: str) -> str:
             "FROM hunt_creatures WHERE creature_name = %s ORDER BY hunt_level",
             (creature_name,), limit=20
         )
-        result["hunting_places"] = hunts
+        if compact:
+            result["hunts"] = [h["hunt_name"] for h in hunts]
+        else:
+            result["hunting_places"] = hunts
 
     if _has_table("quest_bosses"):
         quests = _query(
@@ -304,9 +617,7 @@ def where_to_sell_item(item_name: str) -> str:
         return f"Item '{item_name}' not found."
 
     real_name = items[0]["name"]
-    npc_value = items[0]["npc_value"]
-
-    result = {"item": real_name, "npc_value": npc_value}
+    result = {"item": real_name, "npc_value": items[0]["npc_value"]}
 
     if _has_table("npc_trades"):
         buyers = _query(
@@ -315,21 +626,18 @@ def where_to_sell_item(item_name: str) -> str:
             (real_name,), limit=20
         )
         result["buy_npcs"] = buyers
-    else:
-        result["sell_to_text"] = items[0].get("sell_to", "Unknown")
 
     return json.dumps(result, ensure_ascii=False, indent=2, default=str)
 
 
 @mcp.tool()
-def recommend_hunt(level: int, vocation: str = "") -> str:
+def recommend_hunt(level: int, vocation: str = "", compact: bool = True) -> str:
     """Recommend hunting places for a given level and vocation.
-
-    Returns hunts sorted by exp/loot rating with creature details.
 
     Args:
         level: Character level (e.g. 80, 150, 300)
         vocation: Vocation name (optional, e.g. "knight", "sorcerer", "paladin", "druid")
+        compact: True (default) = name, city, level, ratings only. False = full details + creatures.
     """
     conditions = ["level <= %s", "level >= %s"]
     params = [level + 50, max(1, level - 30)]
@@ -340,10 +648,14 @@ def recommend_hunt(level: int, vocation: str = "") -> str:
 
     where = " AND ".join(conditions)
 
+    if compact:
+        cols = "name, city, level, vocation, exp_rating, loot_rating"
+    else:
+        cols = ("name, city, location, level, vocation, difficulty, "
+                "exp_rating, loot_rating, rare_items, info")
+
     hunts = _query(
-        f"SELECT name, city, location, level, vocation, difficulty, "
-        f"exp_rating, loot_rating, rare_items, info "
-        f"FROM hunts WHERE {where} "
+        f"SELECT {cols} FROM hunts WHERE {where} "
         f"ORDER BY exp_rating DESC NULLS LAST, loot_rating DESC NULLS LAST LIMIT 15",
         params,
     )
@@ -351,7 +663,7 @@ def recommend_hunt(level: int, vocation: str = "") -> str:
     if not hunts:
         return f"No hunts found for level {level}. Try adjusting the level range."
 
-    if _has_table("hunt_creatures"):
+    if not compact and _has_table("hunt_creatures"):
         for hunt in hunts:
             creatures = _query(
                 "SELECT creature_name, creature_hp, creature_exp "
@@ -367,8 +679,6 @@ def recommend_hunt(level: int, vocation: str = "") -> str:
 def profit_analysis(creature_name: str) -> str:
     """Estimate gold profit per kill for a creature based on NPC loot prices.
 
-    Analyzes all loot drops and their NPC sell values to estimate income.
-
     Args:
         creature_name: Creature name (e.g. "Dragon", "Demon", "Hydra")
     """
@@ -382,15 +692,10 @@ def profit_analysis(creature_name: str) -> str:
 
     creature = creatures[0]
     real_name = creature["name"]
-
-    result = {
-        "creature": real_name,
-        "hp": creature["hp"],
-        "exp": creature["exp"],
-    }
+    result = {"creature": real_name, "hp": creature["hp"], "exp": creature["exp"]}
 
     if not _has_table("creature_drops"):
-        return json.dumps({"error": "creature_drops view not available. Run importer first."}, default=str)
+        return json.dumps({"error": "creature_drops view not available."}, default=str)
 
     loot = _query(
         "SELECT item_name, rarity, npc_value "
@@ -400,11 +705,8 @@ def profit_analysis(creature_name: str) -> str:
     )
 
     rarity_rates = {
-        "common": 0.25,
-        "uncommon": 0.10,
-        "semi_rare": 0.05,
-        "rare": 0.02,
-        "very_rare": 0.005,
+        "common": 0.25, "uncommon": 0.10, "semi_rare": 0.05,
+        "rare": 0.02, "very_rare": 0.005,
     }
 
     total_estimated = 0
@@ -424,15 +726,12 @@ def profit_analysis(creature_name: str) -> str:
     result["loot_analysis"] = loot_analysis
     result["estimated_gold_per_kill"] = round(total_estimated, 1)
     result["note"] = "Drop rates are rough estimates. Actual rates vary."
-
     return json.dumps(result, ensure_ascii=False, indent=2, default=str)
 
 
 @mcp.tool()
 def creature_weakness(element: str) -> str:
-    """Find creatures that are weak to a specific damage element.
-
-    A creature is weak when its element_mod > 100 (takes extra damage).
+    """Find creatures weak to a specific damage element (mod > 100%).
 
     Args:
         element: Damage element (physical, earth, fire, death, energy, holy, ice)
@@ -445,7 +744,7 @@ def creature_weakness(element: str) -> str:
 
     col = f"{element}_mod"
     rows = _query(
-        f"SELECT name, hp, exp, {col} as weakness_percent, creature_class, primary_type "
+        f"SELECT name, hp, exp, {col} as weakness_percent, creature_class "
         f"FROM creatures WHERE {col} IS NOT NULL AND {col} > 100 "
         f"ORDER BY {col} DESC, exp DESC LIMIT 20",
     )
@@ -453,7 +752,7 @@ def creature_weakness(element: str) -> str:
     if not rows:
         return f"No creatures found with weakness to {element}."
 
-    return f"Creatures weak to {element} (mod > 100% = takes extra damage):\n\n" + _format(rows)
+    return f"Creatures weak to {element} (mod > 100%):\n\n" + _format(rows)
 
 
 @mcp.tool()
@@ -462,7 +761,7 @@ def items_for_vocation(vocation: str, body_position: str = "") -> str:
 
     Args:
         vocation: Vocation name (e.g. "knight", "sorcerer", "paladin", "druid")
-        body_position: Optional body slot filter (e.g. "helmet", "armor", "legs", "shield", "weapon")
+        body_position: Optional body slot filter (e.g. "helmet", "armor", "legs", "shield")
     """
     conditions = [
         "(voc_required ILIKE %s OR voc_required IS NULL OR voc_required = '')"
@@ -476,9 +775,8 @@ def items_for_vocation(vocation: str, body_position: str = "") -> str:
     where = " AND ".join(conditions)
 
     rows = _query(
-        f"SELECT name, item_class, primary_type, body_position, "
-        f"armor, attack, defense, weight, npc_value, voc_required, "
-        f"imbuement_slots, classification "
+        f"SELECT name, item_class, body_position, armor, attack, defense, "
+        f"npc_value, imbuement_slots, classification "
         f"FROM items WHERE {where} "
         f"AND (armor IS NOT NULL OR attack IS NOT NULL OR defense IS NOT NULL) "
         f"ORDER BY COALESCE(classification, 0) DESC, "
@@ -489,7 +787,24 @@ def items_for_vocation(vocation: str, body_position: str = "") -> str:
 
     if not rows:
         return f"No equipment found for vocation '{vocation}'."
+    return _format(rows)
 
+
+@mcp.tool()
+def compare_creatures(name1: str, name2: str) -> str:
+    """Compare two creatures side by side — stats and elemental weaknesses.
+
+    Args:
+        name1: First creature name
+        name2: Second creature name
+    """
+    rows = _query(
+        "SELECT name, hp, exp, speed, defense, mitigation, charm_points, "
+        "physical_mod, earth_mod, fire_mod, death_mod, energy_mod, holy_mod, ice_mod, "
+        "immunities, creature_class "
+        "FROM creatures WHERE name ILIKE %s OR name ILIKE %s ORDER BY name LIMIT 2",
+        (f"%{name1}%", f"%{name2}%"),
+    )
     return _format(rows)
 
 
@@ -499,14 +814,11 @@ def items_for_vocation(vocation: str, body_position: str = "") -> str:
 def get_map_url(x: int, y: int, z: int, zoom: int = 3) -> str:
     """Generate a TibiaWiki map URL for given coordinates.
 
-    Returns a clickable URL that opens the TibiaWiki interactive map
-    centered on the specified position.
-
     Args:
         x: Map X coordinate (e.g. 33070 for Ankrahmun)
         y: Map Y coordinate (e.g. 32882)
-        z: Map Z coordinate / floor (0-15, where 7 is ground level)
-        zoom: Map zoom level (1-5, default 3)
+        z: Floor (0-15, 7=ground level)
+        zoom: Zoom level (1-5, default 3)
     """
     url = f"https://www.tibiawiki.com.br/wiki/Mapper?coords={x},{y},{z},{zoom}"
     return json.dumps({
@@ -518,27 +830,23 @@ def get_map_url(x: int, y: int, z: int, zoom: int = 3) -> str:
 
 @mcp.tool()
 def search_by_position(x: int, y: int, z: int, radius: int = 50) -> str:
-    """Find all entities near a specific map position within a given radius.
-
-    Searches the positions table for anything close to (x, y, z).
-    Uses Chebyshev distance (max of dx, dy) on the same floor.
+    """Find all entities near a map position within a given radius.
 
     Args:
         x: Map X coordinate
         y: Map Y coordinate
-        z: Map Z coordinate / floor (0-15)
+        z: Floor (0-15)
         radius: Search radius in sqm (default 50, max 500)
     """
     radius = min(radius, 500)
 
     rows = _query(
         "SELECT entity_name, source_table, x, y, z, context, "
-        "ABS(x - %s) + ABS(y - %s) AS manhattan_distance, "
-        "GREATEST(ABS(x - %s), ABS(y - %s)) AS chebyshev_distance "
+        "GREATEST(ABS(x - %s), ABS(y - %s)) AS distance "
         "FROM positions "
         "WHERE z = %s AND x BETWEEN %s AND %s AND y BETWEEN %s AND %s "
-        "ORDER BY chebyshev_distance ASC LIMIT 30",
-        (x, y, x, y, z, x - radius, x + radius, y - radius, y + radius),
+        "ORDER BY distance ASC LIMIT 30",
+        (x, y, z, x - radius, x + radius, y - radius, y + radius),
         limit=30,
     )
 
@@ -559,8 +867,6 @@ def search_by_position(x: int, y: int, z: int, radius: int = 50) -> str:
 @mcp.tool()
 def nearby_entities(entity_name: str, radius: int = 100) -> str:
     """Find entities near a named entity on the map.
-
-    First looks up the entity's position, then finds everything nearby.
 
     Args:
         entity_name: Name of entity to search around (e.g. "Rashid", "Coastwood 1")
@@ -607,448 +913,58 @@ def nearby_entities(entity_name: str, radius: int = 100) -> str:
     return json.dumps(all_results, ensure_ascii=False, indent=2, default=str)
 
 
-@mcp.tool()
-def positions_in_area(x_min: int, y_min: int, x_max: int, y_max: int, z: int = 7, source_table: str = "") -> str:
-    """Find all entities within a rectangular map area.
-
-    Useful for finding everything on a specific map region or city.
-
-    Args:
-        x_min: Minimum X coordinate
-        y_min: Minimum Y coordinate
-        x_max: Maximum X coordinate
-        y_max: Maximum Y coordinate
-        z: Floor level (default 7 = ground)
-        source_table: Filter by entity type (e.g. "npcs", "buildings"). Empty = all types.
-    """
-    conditions = ["z = %s", "x BETWEEN %s AND %s", "y BETWEEN %s AND %s"]
-    params = [z, x_min, x_max, y_min, y_max]
-
-    if source_table:
-        conditions.append("source_table = %s")
-        params.append(source_table)
-
-    where = " AND ".join(conditions)
-
-    rows = _query(
-        f"SELECT entity_name, source_table, x, y, z "
-        f"FROM positions WHERE {where} "
-        f"ORDER BY source_table, entity_name LIMIT 50",
-        params,
-        limit=50,
-    )
-
-    if not rows:
-        return f"No entities found in area ({x_min},{y_min})-({x_max},{y_max}) floor {z}."
-
-    return _format(rows)
-
-
-# ─── BASIC SEARCH TOOLS ───────────────────────────────────────────
+# ─── SEMANTIC SEARCH ───────────────────────────────────────────────
 
 @mcp.tool()
-def search_creature(name: str) -> str:
-    """Search for a creature by name (partial match).
+def semantic_search(question: str, entity_type: str = "", limit: int = 5) -> str:
+    """Search by meaning using AI embeddings. Use for natural language questions.
+
+    Unlike keyword search, this understands semantics:
+    - "creatures that heal themselves" -> finds self-healing creatures
+    - "what happened to the elves?" -> finds relevant lore books
+    - "good items for a mage at level 100" -> finds relevant equipment
+
+    Falls back to keyword search if vector index is unavailable.
 
     Args:
-        name: Creature name to search for (e.g. "Dragon", "Demon")
-
-    Returns information like HP, EXP, loot, abilities, immunities, etc.
+        question: Natural language question or description
+        entity_type: Filter to specific table (optional)
+        limit: Max results (default 5)
     """
-    rows = _query(
-        "SELECT name, hp, exp, speed, charm_points, defense, mitigation, "
-        "creature_class, primary_type, immunities, behavior, "
-        "physical_mod, earth_mod, fire_mod, death_mod, energy_mod, holy_mod, ice_mod, "
-        "loot_common, loot_uncommon, loot_semi_rare, loot_rare, loot_very_rare, "
-        "sounds, notes "
-        "FROM creatures WHERE name ILIKE %s ORDER BY name LIMIT 10",
-        (f"%{name}%",),
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_item(name: str) -> str:
-    """Search for an item by name (partial match).
-
-    Args:
-        name: Item name to search for (e.g. "Magic Plate", "Wand")
-
-    Returns information like armor, attack, defense, weight, value, where to buy/sell, etc.
-    """
-    rows = _query(
-        "SELECT name, item_class, primary_type, armor, attack, defense, weight, "
-        "value, npc_value, voc_required, imbuement_slots, classification, "
-        "dropped_by, buy_from, sell_to, notes "
-        "FROM items WHERE name ILIKE %s ORDER BY name LIMIT 10",
-        (f"%{name}%",),
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_spell(name: str) -> str:
-    """Search for a spell by name or words (partial match).
-
-    Args:
-        name: Spell name or incantation words (e.g. "exura", "fireball")
-    """
-    rows = _query(
-        "SELECT name, words, subclass, mana, mag_level, exp_level, vocations, "
-        "premium, base_power, magic_type, effect, spell_cost, notes "
-        "FROM spells WHERE name ILIKE %s OR words ILIKE %s ORDER BY name LIMIT 10",
-        (f"%{name}%", f"%{name}%"),
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_npc(name: str) -> str:
-    """Search for an NPC by name or city (partial match).
-
-    Args:
-        name: NPC name or city name (e.g. "Rashid", "Thais")
-    """
-    rows = _query(
-        "SELECT name, job, city, subarea, location, buys, sells, notes "
-        "FROM npcs WHERE name ILIKE %s OR city ILIKE %s ORDER BY name LIMIT 10",
-        (f"%{name}%", f"%{name}%"),
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_quest(name: str) -> str:
-    """Search for a quest by name (partial match).
-
-    Args:
-        name: Quest name (e.g. "Annihilator", "Inquisition")
-    """
-    rows = _query(
-        "SELECT name, reward, location, level, level_req, duration, team, "
-        "difficulty, premium, dangers, bosses, legend, notes "
-        "FROM quests WHERE name ILIKE %s ORDER BY name LIMIT 10",
-        (f"%{name}%",),
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_achievement(name: str) -> str:
-    """Search for an achievement by name (partial match).
-
-    Args:
-        name: Achievement name (e.g. "Backpack Tourist")
-    """
-    rows = _query(
-        "SELECT name, grade, points, secret, premium, description, notes "
-        "FROM achievements WHERE name ILIKE %s ORDER BY name LIMIT 10",
-        (f"%{name}%",),
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_mount(name: str) -> str:
-    """Search for a mount by name (partial match).
-
-    Args:
-        name: Mount name (e.g. "Blazebringer", "Widow Queen")
-    """
-    rows = _query(
-        "SELECT name, speed, premium, method, attrib, "
-        "quest_mount, store_mount, tame_mount, event_mount, notes "
-        "FROM mounts WHERE name ILIKE %s ORDER BY name LIMIT 10",
-        (f"%{name}%",),
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_hunt(name: str = "", city: str = "", min_level: int = 0) -> str:
-    """Search for hunting places by name, city, or minimum level.
-
-    Args:
-        name: Hunt name (partial match, optional)
-        city: City name (partial match, optional)
-        min_level: Minimum recommended level (optional)
-    """
-    conditions = []
-    params = []
-
-    if name:
-        conditions.append("name ILIKE %s")
-        params.append(f"%{name}%")
-    if city:
-        conditions.append("city ILIKE %s")
-        params.append(f"%{city}%")
-    if min_level > 0:
-        conditions.append("level >= %s")
-        params.append(min_level)
-
-    where = " AND ".join(conditions) if conditions else "TRUE"
-
-    rows = _query(
-        f"SELECT name, city, location, level, vocation, difficulty, "
-        f"exp_rating, loot_rating, rare_items, info "
-        f"FROM hunts WHERE {where} ORDER BY level, name LIMIT 15",
-        params,
-    )
-    return _format(rows)
-
-
-# ─── NEW ENTITY SEARCH TOOLS ──────────────────────────────────────
-
-@mcp.tool()
-def search_book(name: str) -> str:
-    """Search for books/lore texts by name, title, or content.
-
-    Books contain in-game lore, stories, and knowledge from the Tibia world.
-
-    Args:
-        name: Book name or keyword to search for (e.g. "Elven Names", "dragon", "banor")
-    """
-    if not _has_table("books"):
-        return "Books table not available. Run the importer first."
-
-    rows = _query(
-        "SELECT name, title, author, blurb, location, book_type, text "
-        "FROM books WHERE name ILIKE %s OR title ILIKE %s OR blurb ILIKE %s "
-        "OR text ILIKE %s ORDER BY name LIMIT 10",
-        (f"%{name}%", f"%{name}%", f"%{name}%", f"%{name}%"),
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_building(name: str = "", street: str = "", city: str = "") -> str:
-    """Search for houses and buildings by name, street, or city.
-
-    Returns house info including size, beds, rent, location with map coordinates.
-
-    Args:
-        name: Building name (partial match, optional)
-        street: Street name (partial match, optional)
-        city: City where rent is paid (partial match, optional, e.g. "Thais", "Venore")
-    """
-    if not _has_table("buildings"):
-        return "Buildings table not available. Run the importer first."
-
-    conditions = []
-    params = []
-
-    if name:
-        conditions.append("name ILIKE %s")
-        params.append(f"%{name}%")
-    if street:
-        conditions.append("street ILIKE %s")
-        params.append(f"%{street}%")
-    if city:
-        conditions.append("payrent ILIKE %s")
-        params.append(f"%{city}%")
-
-    where = " AND ".join(conditions) if conditions else "TRUE"
-
-    rows = _query(
-        f"SELECT name, building_type, street, location, size, beds, rent, "
-        f"payrent, floors, rooms, furnishings "
-        f"FROM buildings WHERE {where} ORDER BY name LIMIT 15",
-        params,
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_world(name: str) -> str:
-    """Search for Tibia game worlds/servers by name or location.
-
-    Returns server type (PvP mode), location, BattlEye status, etc.
-
-    Args:
-        name: World name or location (e.g. "Antica", "Brazil", "Optional PvP")
-    """
-    if not _has_table("worlds"):
-        return "Worlds table not available. Run the importer first."
-
-    rows = _query(
-        "SELECT name, world_type, online_since, location, transfer, battleye "
-        "FROM worlds WHERE name ILIKE %s OR world_type ILIKE %s OR location ILIKE %s "
-        "ORDER BY name LIMIT 20",
-        (f"%{name}%", f"%{name}%", f"%{name}%"),
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_rune(name: str) -> str:
-    """Search for runes by name or damage type.
-
-    Returns rune info including damage type, mana to make, level required, buy price.
-
-    Args:
-        name: Rune name or damage type (e.g. "Sudden Death", "fire", "ice")
-    """
-    if not _has_table("runes"):
-        return "Runes table not available. Run the importer first."
-
-    rows = _query(
-        "SELECT name, subclass, damage_type, words, make_mana, weight, "
-        "ml_required, level_required, make_qty, make_voc, premium, "
-        "npc_price, store_value, effect "
-        "FROM runes WHERE name ILIKE %s OR damage_type ILIKE %s OR words ILIKE %s "
-        "ORDER BY name LIMIT 10",
-        (f"%{name}%", f"%{name}%", f"%{name}%"),
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_world_quest(name: str) -> str:
-    """Search for world quests and events (e.g. Rise of Devovorga, Lightbearer).
-
-    World quests are server-wide events that happen periodically.
-
-    Args:
-        name: World quest name (e.g. "Devovorga", "Lightbearer", "Bewitched")
-    """
-    if not _has_table("world_quests"):
-        return "World quests table not available. Run the importer first."
-
-    rows = _query(
-        "SELECT name, quest_type, start_date, end_date, frequency, reward, "
-        "location, level, premium, dangers, bosses, legend "
-        "FROM world_quests WHERE name ILIKE %s ORDER BY name LIMIT 10",
-        (f"%{name}%",),
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_world_change(name: str) -> str:
-    """Search for world changes (dynamic events that alter the game world).
-
-    Args:
-        name: World change name (e.g. "Thornback", "Hive", "Feverish")
-    """
-    if not _has_table("world_changes"):
-        return "World changes table not available. Run the importer first."
-
-    rows = _query(
-        "SELECT name, change_type, frequency, reward, location, level, "
-        "premium, dangers, bosses, legend "
-        "FROM world_changes WHERE name ILIKE %s ORDER BY name LIMIT 10",
-        (f"%{name}%",),
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_familiar(name: str = "", vocation: str = "") -> str:
-    """Search for familiars (summonable companion creatures).
-
-    Each vocation has a unique familiar: Skullfrost (Knight), Emberwing (Sorcerer),
-    Grovebeast (Druid), Thundergiant (Paladin).
-
-    Args:
-        name: Familiar name (partial match, optional)
-        vocation: Vocation filter (optional, e.g. "knight", "druid")
-    """
-    if not _has_table("familiars"):
-        return "Familiars table not available. Run the importer first."
-
-    conditions = []
-    params = []
-
-    if name:
-        conditions.append("name ILIKE %s")
-        params.append(f"%{name}%")
-    if vocation:
-        conditions.append("vocation ILIKE %s")
-        params.append(f"%{vocation}%")
-
-    where = " AND ".join(conditions) if conditions else "TRUE"
-
-    rows = _query(
-        f"SELECT name, hp, summon_cost, vocation, behavior, obtain, notes "
-        f"FROM familiars WHERE {where} ORDER BY name LIMIT 10",
-        params,
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_task(name: str) -> str:
-    """Search for tasks (repeatable hunting assignments from NPCs like Grizzly Adams).
-
-    Args:
-        name: Task name (e.g. "Curos", "Lazaran", "Rottin Wood")
-    """
-    if not _has_table("tasks"):
-        return "Tasks table not available. Run the importer first."
-
-    rows = _query(
-        "SELECT name, premium, reward, location, time, level, dangers "
-        "FROM tasks WHERE name ILIKE %s ORDER BY name LIMIT 10",
-        (f"%{name}%",),
-    )
-    return _format(rows)
-
-
-@mcp.tool()
-def search_update(name: str) -> str:
-    """Search for Tibia game updates by version number or content.
-
-    Args:
-        name: Update version or keyword (e.g. "8.6", "12.0", "summer")
-    """
-    if not _has_table("updates"):
-        return "Updates table not available. Run the importer first."
-
-    rows = _query(
-        "SELECT name, update_version, update_previous, update_next, update_season "
-        "FROM updates WHERE name ILIKE %s OR update_version ILIKE %s "
-        "ORDER BY update_version LIMIT 10",
-        (f"%{name}%", f"%{name}%"),
-    )
-    return _format(rows)
+    try:
+        from src.indexer import query_index
+        results = query_index(question, entity_type=entity_type, limit=limit)
+        if results is not None:
+            return json.dumps({
+                "method": "semantic (vector similarity)",
+                "question": question,
+                "results": results,
+            }, ensure_ascii=False, indent=2, default=str)
+    except Exception as e:
+        logger.debug("Semantic search unavailable: %s", e)
+
+    # Fallback to keyword search
+    fallback = search(question, entity_type=entity_type, limit=limit)
+    return f"(Semantic search unavailable, using keyword fallback)\n\n{fallback}"
 
 
 # ─── UTILITY TOOLS ─────────────────────────────────────────────────
 
 @mcp.tool()
-def compare_creatures(name1: str, name2: str) -> str:
-    """Compare two creatures side by side.
-
-    Args:
-        name1: First creature name (exact or partial)
-        name2: Second creature name (exact or partial)
-    """
-    rows = _query(
-        "SELECT name, hp, exp, speed, defense, mitigation, charm_points, "
-        "physical_mod, earth_mod, fire_mod, death_mod, energy_mod, holy_mod, ice_mod, "
-        "immunities, loot_rare, loot_very_rare "
-        "FROM creatures WHERE name ILIKE %s OR name ILIKE %s ORDER BY name LIMIT 2",
-        (f"%{name1}%", f"%{name2}%"),
-    )
-    return _format(rows)
-
-
-@mcp.tool()
 def query_database(sql_query: str) -> str:
-    """Execute a read-only SQL query on the TibiaWiki database.
+    """Execute a read-only SQL SELECT on the TibiaWiki database.
 
-    Available tables: raw_pages, creatures, items, spells, npcs, quests,
-    achievements, mounts, outfits, imbuements, hunts, books, buildings,
-    worlds, runes, world_quests, world_changes, familiars, tasks, updates,
-    fansites, positions.
+    Tables: raw_pages, creatures, items, spells, npcs, quests, achievements,
+    mounts, outfits, imbuements, hunts, books, buildings, worlds, runes,
+    world_quests, world_changes, familiars, tasks, updates, fansites, positions.
 
-    Materialized views: creature_drops, npc_trades, hunt_creatures, quest_bosses.
+    Views: creature_drops, npc_trades, hunt_creatures, quest_bosses.
 
-    The positions table has columns: id, page_id, source_table, entity_name, x, y, z, context.
-    Use it for spatial queries (find entities near coordinates, calculate distances, etc).
+    Columns of interest: most tables have name, page_id, tags[], summary, notes.
+    The positions table has: page_id, source_table, entity_name, x, y, z, context.
 
     Args:
-        sql_query: A SELECT SQL query (read-only, max 20 results)
+        sql_query: A SELECT SQL query (read-only, max 30 results)
     """
     cleaned = sql_query.strip().upper()
     if not cleaned.startswith("SELECT"):
@@ -1059,42 +975,10 @@ def query_database(sql_query: str) -> str:
             return f"Error: {keyword} is not allowed. Only SELECT queries."
 
     try:
-        rows = _query(sql_query, limit=20)
+        rows = _query(sql_query, limit=30)
         return _format(rows)
     except Exception as e:
         return f"Query error: {e}"
-
-
-@mcp.tool()
-def get_database_stats() -> str:
-    """Get statistics about the TibiaWiki database.
-
-    Shows the number of records in each table and materialized view.
-    """
-    tables = [
-        "raw_pages", "creatures", "items", "spells", "npcs", "quests",
-        "achievements", "mounts", "outfits", "imbuements", "hunts",
-        "books", "buildings", "worlds", "runes", "world_quests",
-        "world_changes", "familiars", "tasks", "updates", "fansites",
-        "positions",
-    ]
-    views = ["creature_drops", "npc_trades", "hunt_creatures", "quest_bosses"]
-
-    stats = {}
-    conn = _get_conn()
-    try:
-        with conn.cursor() as cur:
-            for table in tables + views:
-                try:
-                    cur.execute(f"SELECT count(*) as cnt FROM {table}")
-                    stats[table] = cur.fetchone()["cnt"]
-                except Exception:
-                    stats[table] = "not available"
-                    conn.rollback()
-    finally:
-        conn.close()
-
-    return json.dumps(stats, indent=2)
 
 
 if __name__ == "__main__":

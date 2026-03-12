@@ -19,6 +19,7 @@ from src.parser import (
     world_changes, familiars, tasks, updates, fansites,
 )
 from src.parser.wikitext import extract_map_coords
+from src.tagger import generate_tags, generate_summary
 
 logging.basicConfig(
     level=logging.INFO,
@@ -232,12 +233,57 @@ def phase_extract_positions():
         conn.close()
 
 
+def phase_generate_tags():
+    """Phase 4: Generate tags and summaries for all parsed entities."""
+    logger.info("=== PHASE 4: Generating tags and summaries ===")
+
+    conn = get_connection()
+    try:
+        for _, parser_module in PARSERS:
+            table = parser_module.TABLE
+
+            # Check if tags column exists
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = %s AND column_name = 'tags'",
+                    (table,),
+                )
+                if not cur.fetchone():
+                    continue
+
+            with conn.cursor() as cur:
+                cur.execute(f"SELECT * FROM {table}")
+                rows = cur.fetchall()
+
+            updated = 0
+            for row in rows:
+                record = dict(row)
+                tags = generate_tags(table, record)
+                summary = generate_summary(table, record)
+
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"UPDATE {table} SET tags = %s, summary = %s WHERE page_id = %s",
+                        (tags, summary, record["page_id"]),
+                    )
+                updated += 1
+
+            conn.commit()
+            logger.info("Tagged %s: %d records", table, updated)
+
+    finally:
+        conn.close()
+
+    logger.info("Phase 4 complete")
+
+
 MATERIALIZED_VIEWS = ["creature_drops", "npc_trades", "hunt_creatures", "quest_bosses"]
 
 
 def phase_refresh_views():
-    """Phase 4: Refresh materialized views for cross-entity relationships."""
-    logger.info("=== PHASE 4: Refreshing materialized views ===")
+    """Phase 5: Refresh materialized views for cross-entity relationships."""
+    logger.info("=== PHASE 5: Refreshing materialized views ===")
 
     conn = get_connection()
     try:
@@ -253,7 +299,25 @@ def phase_refresh_views():
     finally:
         conn.close()
 
-    logger.info("Phase 4 complete")
+    logger.info("Phase 5 complete")
+
+
+def phase_build_embeddings():
+    """Phase 6: Build semantic search index with LlamaIndex (optional)."""
+    logger.info("=== PHASE 6: Building semantic embeddings ===")
+    try:
+        from src.indexer import build_index
+        from src.config import DATABASE_URL
+        build_index(DATABASE_URL)
+        logger.info("Semantic index built successfully")
+    except ImportError:
+        logger.info("LlamaIndex not installed, skipping semantic indexing. "
+                     "Install with: pip install llama-index llama-index-vector-stores-postgres "
+                     "llama-index-embeddings-huggingface sentence-transformers")
+    except Exception as e:
+        logger.warning("Could not build semantic index: %s", e)
+
+    logger.info("Phase 6 complete")
 
 
 def main():
@@ -273,8 +337,14 @@ def main():
     # Phase 3: Extract positions from parsed content
     phase_extract_positions()
 
-    # Phase 4: Refresh materialized views (for cross-entity queries)
+    # Phase 4: Generate tags and summaries
+    phase_generate_tags()
+
+    # Phase 5: Refresh materialized views (for cross-entity queries)
     phase_refresh_views()
+
+    # Phase 6: Build semantic embeddings (optional)
+    phase_build_embeddings()
 
     # Summary
     conn = get_connection()
