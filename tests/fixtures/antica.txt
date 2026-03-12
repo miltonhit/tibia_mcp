@@ -1,0 +1,12 @@
+{{Infobox_World|List={{{1|}}}|GetValue={{{GetValue|}}}
+| name     = Antica
+| type     = Open PvP
+| online   = 07 de janeiro de 1997
+| freesince = Sempre
+| offline  =
+| location = Reino Unido
+| transfer = sim
+| battleye = yellow
+| forum    = 25
+| troca    = 9
+}}

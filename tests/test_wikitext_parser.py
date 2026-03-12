@@ -6,8 +6,8 @@ import sys
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from src.parser.wikitext import extract_infobox, clean_wikilinks, parse_boolean, parse_int, parse_float
-from src.parser import creatures, items, mounts
+from src.parser.wikitext import extract_infobox, clean_wikilinks, parse_boolean, parse_int, parse_float, extract_map_coords
+from src.parser import creatures, items, mounts, books, buildings, worlds, runes, world_quests, familiars
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -108,6 +108,34 @@ def test_parse_float():
     assert parse_float(None) is None
 
 
+# === extract_map_coords tests ===
+
+def test_extract_map_coords_basic():
+    text = "localizado em ({{mapa|32644,31601,6:5|aqui}})."
+    coords = extract_map_coords(text)
+    assert coords == [(32644, 31601, 6)]
+
+
+def test_extract_map_coords_multiple():
+    text = "({{mapa|33070,32882,6:2|aqui}}) e ({{mapa|33235,32485,7:2|aqui}})"
+    coords = extract_map_coords(text)
+    assert len(coords) == 2
+    assert coords[0] == (33070, 32882, 6)
+    assert coords[1] == (33235, 32485, 7)
+
+
+def test_extract_map_coords_none():
+    assert extract_map_coords(None) == []
+    assert extract_map_coords("") == []
+    assert extract_map_coords("no coordinates here") == []
+
+
+def test_extract_map_coords_no_zoom():
+    text = "{{mapa|32000,31000,7|aqui}}"
+    coords = extract_map_coords(text)
+    assert coords == [(32000, 31000, 7)]
+
+
 # === Type-specific parser tests ===
 
 def test_creature_parser():
@@ -154,6 +182,109 @@ def test_mount_parser():
 def test_creature_parser_no_infobox():
     result = creatures.parse(99999, "Just some random text without infobox")
     assert result is None
+
+
+# === New parser tests ===
+
+def test_book_parser():
+    content = read_fixture("elven_names_book.txt")
+    result = books.parse(20001, content)
+    assert result is not None
+    assert result["page_id"] == 20001
+    assert result["name"] == "Elven Names"
+    assert result["translated"] is True
+    assert "Ab'Dendriel" in result["location"]
+    assert "Elven names are chosen" in result["text"]
+    assert result["blurb"] == "Arquivo de como os elfos ganham seus nomes."
+
+
+def test_building_parser():
+    content = read_fixture("coastwood1.txt")
+    result = buildings.parse(20002, content)
+    assert result is not None
+    assert result["page_id"] == 20002
+    assert result["name"] == "Coastwood 1"
+    assert result["building_type"] == "Casa"
+    assert result["street"] == "Coastwood"
+    assert result["size"] == 16
+    assert result["beds"] == 2
+    assert result["rent"] == 50000
+    assert result["payrent"] == "Ab'Dendriel"
+    assert result["openwindows"] == 4
+    assert result["floors"] == 1
+    assert result["rooms"] == 1
+
+
+def test_world_parser():
+    content = read_fixture("antica.txt")
+    result = worlds.parse(20003, content)
+    assert result is not None
+    assert result["page_id"] == 20003
+    assert result["name"] == "Antica"
+    assert result["world_type"] == "Open PvP"
+    assert result["location"] == "Reino Unido"
+    assert result["transfer"] is True
+    assert result["battleye"] == "yellow"
+
+
+def test_rune_parser():
+    content = read_fixture("sudden_death_rune.txt")
+    result = runes.parse(20004, content)
+    assert result is not None
+    assert result["page_id"] == 20004
+    assert result["name"] == "Sudden Death Rune"
+    assert result["damage_type"] == "Death"
+    assert result["words"] == "adori gran mort"
+    assert result["make_mana"] == 985
+    assert result["weight"] == 0.70
+    assert result["ml_required"] == 15
+    assert result["level_required"] == 45
+    assert result["soul"] == 5
+    assert result["make_qty"] == 3
+    assert result["premium"] is False
+    assert result["npc_price"] == 162
+    assert result["store_value"] == 28
+
+
+def test_world_quest_parser():
+    content = read_fixture("devovorga.txt")
+    result = world_quests.parse(20005, content)
+    assert result is not None
+    assert result["page_id"] == 20005
+    assert result["name"] == "Rise of Devovorga"
+    assert result["quest_type"] == "quest"
+    assert result["start_date"] == "01 de Setembro"
+    assert result["end_date"] == "07 de Setembro"
+    assert result["frequency"] == "Anual"
+    assert result["level"] == 20
+    assert result["premium"] is True
+    assert "Devovorga" in result["bosses"]
+
+
+def test_familiar_parser():
+    content = read_fixture("skullfrost.txt")
+    result = familiars.parse(20006, content)
+    assert result is not None
+    assert result["page_id"] == 20006
+    assert result["name"] == "Skullfrost"
+    assert result["hp"] == 10000
+    assert result["summon_cost"] == 1000
+    assert result["vocation"] == "knight"
+    assert result["illusionable"] is False
+    assert result["pushable"] is True
+    assert result["push_objects"] is False
+    assert "cavaleiros" in result["notes"]
+
+
+def test_building_with_coords():
+    """Test that building location field preserves mapa template for coord extraction."""
+    content = read_fixture("coastwood1.txt")
+    raw = extract_infobox(content, "Infobox_Building")
+    assert raw is not None
+    # The raw location should contain the mapa template
+    assert "mapa" in raw["location"]
+    coords = extract_map_coords(raw["location"])
+    assert coords == [(32644, 31601, 6)]
 
 
 if __name__ == "__main__":

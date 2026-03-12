@@ -1,0 +1,16 @@
+{{Infobox_World_Quest|List={{{1|}}}|GetValue={{{GetValue|}}}
+| name         = Rise of Devovorga
+| type         = quest
+| start        = 01 de Setembro
+| end          = 07 de Setembro
+| freq         = Anual
+| reward       = Recuperação da [[mana]] e [[HP|vida]] aumenta em 50%.
+| location     = Começa em [[Vengoth]], indo em áreas de [[Edron]].
+| lvl          = 20
+| premium      = sim
+| dangers      = [[Haunted Treeling]]s, [[Tarantula]]s.
+| mini         = [[Bloom of Doom]], [[Cocoon]].
+| bosses       = [[Devovorga]].
+| legend       = Nas profundezas de Vengoth, uma maliciosa criatura aguarda.
+| implemented  = 8.6
+}}

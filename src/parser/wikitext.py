@@ -205,3 +205,18 @@ def parse_float(value):
         return float(v)
     except ValueError:
         return None
+
+
+def extract_map_coords(text):
+    """Extract map coordinates from {{mapa|X,Y,Z:zoom|text}} patterns.
+
+    The TibiaWiki BR uses {{mapa|33070,32882,6:2|aqui}} to embed map links.
+    This extracts all (x, y, z) tuples found in any text field.
+
+    Returns:
+        list of (x, y, z) tuples
+    """
+    if not text:
+        return []
+    matches = re.findall(r'\{\{mapa\|(\d+),(\d+),(\d+)(?::\d+)?\|', text, re.IGNORECASE)
+    return [(int(x), int(y), int(z)) for x, y, z in matches]

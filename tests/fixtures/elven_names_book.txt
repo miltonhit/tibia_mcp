@@ -1,0 +1,16 @@
+{{Infobox_Book|List={{{1|}}}|GetValue={{{GetValue|}}}
+| title            = Elven Names
+| flavortext       =
+| location         = [[Ab'Dendriel]]
+| TIBN1            = TIBN-0001-0273-027301-SH04-2816
+| author           =
+| blurb            = Arquivo de como os elfos ganham seus nomes.
+| type             =
+| traduzido        = sim
+| implemented      = 6.2
+| prevbook         =
+| nextbook         =
+| notes            =
+| relatedpages     =
+| text             = Elven names are chosen in adulthood. Until they acquire a name, elves are called 'son/daughter of ___' usually naming the parent with the same gender.
+}}

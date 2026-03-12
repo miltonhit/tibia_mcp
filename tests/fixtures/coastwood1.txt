@@ -1,0 +1,17 @@
+{{Infobox_Building|List={{{1|}}}|GetValue={{{GetValue|}}}
+|  name        = Coastwood 1
+|  type        = Casa
+|  location    = Noroeste da cidade, no primeiro andar, ({{mapa|32644,31601,6:5|aqui}}).
+|  street      = Coastwood
+|  size        = 16
+|  beds        = 2
+|  rent        = 50 000
+|  payrent     = Ab'Dendriel
+|  openwindows = 4
+|  floors      = 1
+|  rooms       = 1
+|  furnishings = 1 [[Wall Lamp]].
+|  notes       =
+|  image       = [[Arquivo:Coastwood1.jpg]]
+|  implemented = 6.2
+}}

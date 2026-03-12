@@ -1,0 +1,14 @@
+{{Infobox Familiar
+| name             = Skullfrost
+| hp               = 10000
+| summon           = 1000
+| illusionable     = no
+| vocation         = knight
+| pushable         = yes
+| pushobjects      = no
+| behavior         = Ataca à distância. Luta até a morte.
+| obtain           = Obtido ao comprar a magia Summon Knight Familiar.
+| implemented      = 11.40
+| notes            = Essa é uma criatura especial invocada apenas por cavaleiros.
+| history          = De acordo com histórias antigas, os Skullfrosts originaram-se das profundezas.
+}}

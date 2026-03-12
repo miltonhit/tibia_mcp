@@ -13,7 +13,12 @@ from src.api.downloader import download_page_contents
 from src.db.connection import get_connection
 from src.db.migrator import run_migrations
 from src.db.inserter import upsert_raw_pages, upsert_parsed_records
-from src.parser import creatures, items, spells, npcs, quests, achievements, mounts, outfits, imbuements, hunts
+from src.parser import (
+    creatures, items, spells, npcs, quests, achievements, mounts, outfits,
+    imbuements, hunts, books, buildings, worlds, runes, world_quests,
+    world_changes, familiars, tasks, updates, fansites,
+)
+from src.parser.wikitext import extract_map_coords
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,6 +39,16 @@ PARSERS = [
     ("Infobox_Outfit", outfits),
     ("Infobox_Imbuement", imbuements),
     ("Infobox_Hunts", hunts),
+    ("Infobox_Book", books),
+    ("Infobox_Building", buildings),
+    ("Infobox_World", worlds),
+    ("Infobox_Runas", runes),
+    ("Infobox_World_Quest", world_quests),
+    ("Infobox_World_Change", world_changes),
+    ("Infobox Familiar", familiars),
+    ("Infobox_Tasks", tasks),
+    ("Infobox_Updates", updates),
+    ("Infobox_Fansite", fansites),
 ]
 
 
@@ -135,6 +150,88 @@ def phase_parse_and_import():
     logger.info("Phase 2 complete")
 
 
+def phase_extract_positions():
+    """Phase 3: Extract map coordinates from all parsed content into positions table."""
+    logger.info("=== PHASE 3: Extracting map positions ===")
+
+    conn = get_connection()
+    try:
+        # For each parser, scan its text fields for {{mapa|X,Y,Z:zoom|text}} patterns
+        table_text_fields = {
+            "npcs": ["location", "notes"],
+            "buildings": ["location", "notes"],
+            "hunts": ["location", "map_coords", "info", "notes"],
+            "quests": ["location", "legend", "spoiler", "notes"],
+            "creatures": ["location_raid", "notes"],
+            "world_quests": ["location", "legend", "notes"],
+            "world_changes": ["location", "legend", "notes"],
+            "tasks": ["location", "notes"],
+            "books": ["location", "notes"],
+            "runes": ["notes"],
+        }
+
+        total_positions = 0
+
+        for table, fields in table_text_fields.items():
+            cols = ", ".join(["page_id", "name"] + fields)
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(f"SELECT {cols} FROM {table}")
+                    rows = cur.fetchall()
+                except Exception:
+                    conn.rollback()
+                    continue
+
+            positions = []
+            for row in rows:
+                page_id = row["page_id"]
+                entity_name = row["name"]
+                seen = set()
+                for field in fields:
+                    text = row.get(field)
+                    if not text:
+                        continue
+                    # Also scan raw_pages content for this page_id
+                    coords = extract_map_coords(text)
+                    for x, y, z in coords:
+                        if (x, y, z) not in seen:
+                            seen.add((x, y, z))
+                            context_snippet = field
+                            positions.append((page_id, table, entity_name, x, y, z, context_snippet))
+
+                # Also check raw content for coords not in parsed fields
+                with conn.cursor() as cur:
+                    cur.execute("SELECT content FROM raw_pages WHERE page_id = %s", (page_id,))
+                    raw_row = cur.fetchone()
+                if raw_row and raw_row["content"]:
+                    raw_coords = extract_map_coords(raw_row["content"])
+                    for x, y, z in raw_coords:
+                        if (x, y, z) not in seen:
+                            seen.add((x, y, z))
+                            positions.append((page_id, table, entity_name, x, y, z, "raw_content"))
+
+            if positions:
+                with conn.cursor() as cur:
+                    from psycopg2.extras import execute_values
+                    execute_values(
+                        cur,
+                        "INSERT INTO positions (page_id, source_table, entity_name, x, y, z, context) "
+                        "VALUES %s ON CONFLICT (page_id, x, y, z) DO UPDATE SET "
+                        "source_table = EXCLUDED.source_table, "
+                        "entity_name = EXCLUDED.entity_name, "
+                        "context = EXCLUDED.context",
+                        positions,
+                    )
+                conn.commit()
+                total_positions += len(positions)
+                logger.info("Extracted %d positions from %s", len(positions), table)
+
+        logger.info("Phase 3 complete: %d total positions extracted", total_positions)
+
+    finally:
+        conn.close()
+
+
 MATERIALIZED_VIEWS = ["creature_drops", "npc_trades", "hunt_creatures", "quest_bosses"]
 
 
@@ -170,8 +267,11 @@ def main():
     client = WikiClient()
     phase_download(client)
 
-    # Phase 2+3: Parse and import
+    # Phase 2: Parse and import
     phase_parse_and_import()
+
+    # Phase 3: Extract positions from parsed content
+    phase_extract_positions()
 
     # Phase 4: Refresh materialized views (for cross-entity queries)
     phase_refresh_views()
@@ -192,6 +292,10 @@ def main():
                 cur.execute(f"SELECT count(*) as cnt FROM {table}")
                 count = cur.fetchone()["cnt"]
                 logger.info("  %s: %d records", table, count)
+
+            cur.execute("SELECT count(*) as cnt FROM positions")
+            pos_count = cur.fetchone()["cnt"]
+            logger.info("  positions: %d records", pos_count)
     finally:
         conn.close()
 

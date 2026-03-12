@@ -1,0 +1,24 @@
+{{Infobox_Runas|List={{{1|}}}|GetValue={{{GetValue|}}}
+| name           = Sudden Death Rune
+| Subclass       = Ataque
+| damagetype     = Death
+| words          = adori gran mort
+| makemana       = 985
+| weight         = 0.70
+| mlrequired     = 15
+| levelrequired  = 45
+| soul           = 5
+| makeqty        = 3
+| makevoc        = [[Sorcerer]]s
+| premium        = não
+| makelvl        = 45
+| droppedby      = [[Gravedigger]], [[Hand of Cursed Fate]].
+| buyfrom        = Shiriel, Fenech, Rachel
+| learncost      = 3 000
+| npcprice       = 162
+| storevalue     = 28
+| effect          = Dano Death em um alvo.
+| history        = A runa mais poderosa do jogo.
+| implemented    = Pre-6.0
+| notes          = É a runa mais poderosa do jogo.
+}}
