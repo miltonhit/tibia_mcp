@@ -135,6 +135,30 @@ def phase_parse_and_import():
     logger.info("Phase 2 complete")
 
 
+MATERIALIZED_VIEWS = ["creature_drops", "npc_trades", "hunt_creatures", "quest_bosses"]
+
+
+def phase_refresh_views():
+    """Phase 4: Refresh materialized views for cross-entity relationships."""
+    logger.info("=== PHASE 4: Refreshing materialized views ===")
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            for view in MATERIALIZED_VIEWS:
+                try:
+                    cur.execute(f"REFRESH MATERIALIZED VIEW {view}")
+                    logger.info("Refreshed view: %s", view)
+                except Exception as e:
+                    logger.warning("Could not refresh %s: %s", view, e)
+                    conn.rollback()
+        conn.commit()
+    finally:
+        conn.close()
+
+    logger.info("Phase 4 complete")
+
+
 def main():
     logger.info("Starting TibiaWiki Downloader")
 
@@ -148,6 +172,9 @@ def main():
 
     # Phase 2+3: Parse and import
     phase_parse_and_import()
+
+    # Phase 4: Refresh materialized views (for cross-entity queries)
+    phase_refresh_views()
 
     # Summary
     conn = get_connection()

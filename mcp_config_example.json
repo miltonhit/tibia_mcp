@@ -1,12 +1,7 @@
 {
   "mcpServers": {
     "tibiawiki": {
-      "command": "python",
-      "args": ["-m", "src.mcp_server"],
-      "cwd": "/path/to/tibiawiki_downloader",
-      "env": {
-        "DATABASE_URL": "postgresql://tibiawiki:tibiawiki@localhost:5432/tibiawiki"
-      }
+      "url": "http://localhost:8000/sse"
     }
   }
 }
