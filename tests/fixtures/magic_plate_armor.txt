@@ -1,0 +1,18 @@
+{{Infobox_Item|List={{{1|}}}|GetValue={{{GetValue|}}}
+| name          = Magic Plate Armor
+| vocrequired   =
+| itemclass     = Armaduras
+| primarytype   = Armaduras
+| armor         = 17
+| weight        = 85.00
+| value         = 90000 - 200000
+| npcvalue      = 6400
+| stackable     =
+| imbuementslots = 3
+| classification = 4
+| droppedby     = [[Dragon Lord]], [[Ferumbras]], [[Orshabaal]]
+| buyfrom       = --
+| sellto        = [[Rashid]] - 6400 gps
+| implemented   = Pre-6.0
+| notas         = É uma das armaduras mais valiosas do jogo.
+}}

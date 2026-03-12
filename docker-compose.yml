@@ -1,0 +1,44 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tibiawiki
+      POSTGRES_USER: tibiawiki
+      POSTGRES_PASSWORD: tibiawiki
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tibiawiki"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  importer:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://tibiawiki:tibiawiki@db:5432/tibiawiki
+      WIKI_API_URL: https://www.tibiawiki.com.br/api.php
+      RATE_LIMIT_SECONDS: "1"
+      BATCH_SIZE: "50"
+
+  mcp:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://tibiawiki:tibiawiki@db:5432/tibiawiki
+    ports:
+      - "8000:8000"
+    command: ["python", "-m", "src.mcp_server"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:

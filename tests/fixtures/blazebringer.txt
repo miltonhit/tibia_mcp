@@ -1,0 +1,20 @@
+{{Infobox_Mount|List={{{1|}}}|GetValue={{{GetValue|}}}
+| name         = Blazebringer
+| arenamount   =
+| champmount   =
+| colormount   =
+| eventmount   = sim
+| offermount   =
+| questmount   =
+| raidmount    =
+| rentmount    =
+| storemount   =
+| tamemount    =
+| wchangemount =
+| speed        = 10
+| attrib       = Fornece luz vermelha em um raio de 6 [[sqm]]s em volta do jogador.
+| premium      = sim
+| implemented  = 8.7
+| method       = Para ter essa montaria você deve falar com o [[Santa Claus|Papai Noel]].
+| notes        = Nota de teste.
+}}
