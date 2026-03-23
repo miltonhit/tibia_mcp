@@ -372,7 +372,7 @@ def generate_summary(table, record):
         if record.get("update_version"):
             parts.append(f"v{record['update_version']}")
         if record.get("update_season"):
-            parts.append(record["update_season"])
+            parts.append(str(record["update_season"]))
         return " | ".join(parts) if parts else ""
 
     elif table == "fansites":

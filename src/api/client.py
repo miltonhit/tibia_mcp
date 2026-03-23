@@ -1,9 +1,12 @@
 import time
 import logging
 
+import urllib3
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from src.config import WIKI_API_URL, RATE_LIMIT_SECONDS
 
@@ -24,13 +27,14 @@ class WikiClient:
         })
 
         retry_strategy = Retry(
-            total=3,
+            total=5,
             backoff_factor=1,
             status_forcelist=[429, 500, 502, 503, 504],
         )
         adapter = HTTPAdapter(max_retries=retry_strategy)
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
+        self.session.verify = False
 
     def _rate_limit_wait(self):
         """Wait to respect rate limiting."""

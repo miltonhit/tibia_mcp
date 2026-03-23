@@ -187,7 +187,11 @@ def parse_int(value):
     if not v:
         return None
     try:
-        return int(v)
+        result = int(v)
+        # Clamp to PostgreSQL INTEGER range
+        if result > 2147483647 or result < -2147483648:
+            return None
+        return result
     except ValueError:
         return None
 

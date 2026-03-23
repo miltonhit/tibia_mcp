@@ -56,7 +56,25 @@ def run_migrations():
                 with open(filepath) as f:
                     sql = f.read()
 
-                cur.execute(sql)
+                try:
+                    cur.execute(sql)
+                except Exception as e:
+                    conn.rollback()
+                    # Check if migration is marked as optional
+                    if "optional" in sql.lower()[:200]:
+                        logger.warning(
+                            "Optional migration %s failed (skipping): %s",
+                            filename, e,
+                        )
+                        # Still record it so we don't retry every run
+                        cur.execute(
+                            "INSERT INTO schema_migrations (version, filename) VALUES (%s, %s)",
+                            (version, filename),
+                        )
+                        conn.commit()
+                        continue
+                    raise
+
                 cur.execute(
                     "INSERT INTO schema_migrations (version, filename) VALUES (%s, %s)",
                     (version, filename),
