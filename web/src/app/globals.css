@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-tibia-dark: #0a0a0f;
+  --color-tibia-darker: #050508;
+  --color-tibia-panel: #1a1a2e;
+  --color-tibia-panel-light: #16213e;
+
+  --color-tibia-gold: #d4a017;
+  --color-tibia-gold-light: #f0c040;
+  --color-tibia-gold-dim: #8b6914;
+
+  --color-tibia-green: #2ecc71;
+  --color-tibia-green-dark: #1a6b37;
+
+  --color-tibia-red: #c0392b;
+  --color-tibia-red-glow: #e74c3c;
+
+  --color-tibia-blue: #3498db;
+  --color-tibia-blue-dark: #1a3a5c;
+
+  --color-tibia-text: #e8e6e3;
+  --color-tibia-text-dim: #8b8680;
+
+  --color-terminal-green: #00ff41;
+  --color-terminal-bg: #0d1117;
+
+  --font-pixel: "Press Start 2P", monospace;
+  --font-terminal: "VT323", monospace;
+  --font-body: "Inter", system-ui, sans-serif;
+
+  --animate-fade-in-up: fade-in-up 0.6s ease-out forwards;
+  --animate-pixel-pulse: pixel-pulse 2s ease-in-out infinite;
+  --animate-flicker: flicker 3s infinite;
+
+  @keyframes fade-in-up {
+    0% { opacity: 0; transform: translateY(20px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes pixel-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  @keyframes flicker {
+    0%, 92%, 94%, 97%, 100% { opacity: 1; }
+    93% { opacity: 0.8; }
+    96% { opacity: 0.9; }
+  }
+}
+
+/* Pixel art rendering */
+.pixel-render {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* RPG-style double border frame */
+.rpg-frame {
+  border: 3px solid #8b6914;
+  outline: 2px solid #d4a017;
+  outline-offset: 3px;
+  background: linear-gradient(180deg, #1a1a2e 0%, #0a0a0f 100%);
+}
+
+/* Scanline overlay for retro CRT effect */
+.scanlines {
+  position: relative;
+}
+.scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* Terminal cursor blink */
+.cursor-blink::after {
+  content: '_';
+  animation: blink 1s step-start infinite;
+}
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* Pixel step-pattern divider */
+.pixel-divider {
+  height: 6px;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0px,
+    transparent 4px,
+    #8b6914 4px,
+    #8b6914 8px
+  );
+  opacity: 0.3;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0a0f;
+}
+::-webkit-scrollbar-thumb {
+  background: #8b6914;
+  border: 1px solid #d4a017;
+}
+
+body {
+  background: #0a0a0f;
+  color: #e8e6e3;
+}

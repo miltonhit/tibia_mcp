@@ -62,12 +62,36 @@ def test_item_tags_shield():
 
 def test_item_tags_equipment():
     record = {"name": "Magic Plate Armor", "armor": 17, "classification": 4,
-              "body_position": "Body", "imbuement_slots": 3}
+              "body_position": "armor", "imbuement_slots": 3}
     tags = generate_tags("items", record)
     assert "equipment" in tags
     assert "high_tier" in tags
     assert "imbueable" in tags
-    assert "body" in tags
+    assert "armor" in tags
+
+
+def test_item_tags_new_fields():
+    record = {"name": "Falcon Plate", "armor": 18, "classification": 4,
+              "body_position": "armor", "imbuement_slots": 2,
+              "level_required": 300, "resist": "Physical +12%",
+              "skillboost": "Shielding +4", "enchantable": True,
+              "element_attack": None, "augments": None, "npc_value": 5000}
+    tags = generate_tags("items", record)
+    assert "high_level_req" in tags
+    assert "has_resistance" in tags
+    assert "has_skillboost" in tags
+    assert "enchantable" in tags
+    assert "elemental_weapon" not in tags
+    assert "has_augments" not in tags
+
+
+def test_item_tags_elemental_weapon():
+    record = {"name": "Gnome Sword", "attack": 51, "classification": 3,
+              "element_attack": "+25 Ice", "augments": "Critical +8%"}
+    tags = generate_tags("items", record)
+    assert "weapon" in tags
+    assert "elemental_weapon" in tags
+    assert "has_augments" in tags
 
 
 # === Spell tags ===
@@ -162,6 +186,17 @@ def test_item_summary():
     assert "Arm:17" in summary
     assert "NPC:6400gp" in summary
     assert "Tier:4" in summary
+
+
+def test_item_summary_with_new_fields():
+    record = {"name": "Falcon Plate", "item_class": "Armaduras",
+              "armor": 18, "npc_value": 0, "classification": 4,
+              "level_required": 300, "resist": "Physical +12%",
+              "skillboost": "Shielding +4"}
+    summary = generate_summary("items", record)
+    assert "Lvl:300" in summary
+    assert "Res:Physical +12%" in summary
+    assert "Skill:Shielding +4" in summary
 
 
 def test_hunt_summary():
