@@ -2,6 +2,63 @@
 
 Ferramenta para baixar, parsear e indexar todo o conteúdo do [TibiaWiki](https://www.tibiawiki.com.br) — a wiki do MMORPG Tibia — e disponibilizá-lo via um servidor **MCP (Model Context Protocol)** para agentes de IA.
 
+## Quick Start
+
+A maneira mais rápida de subir tudo é usando o **Claude Code** com a skill `/start`:
+
+```
+/start
+```
+
+Isso irá automaticamente:
+1. Verificar todos os pré-requisitos (Docker, portas livres, etc.)
+2. Criar o diretório de dados persistentes para o PostgreSQL
+3. Subir o banco, executar o crawler e iniciar o servidor MCP
+4. Exibir a URL do MCP pronta para uso
+
+> **MCP URL:** `http://localhost:8000/sse`
+
+### Pré-requisitos
+
+- [Docker](https://docs.docker.com/get-docker/) e Docker Compose V2
+- Portas **5432** (PostgreSQL) e **8000** (MCP) livres
+
+### Dados persistentes
+
+Os dados do PostgreSQL ficam armazenados em `./data/postgres/` na máquina hospedeira. Isso significa que reiniciar os containers **não perde dados** — o crawler não precisa re-baixar tudo.
+
+### Comandos úteis
+
+```bash
+# Ver logs em tempo real
+docker compose logs -f
+
+# Ver status dos serviços
+docker compose ps
+
+# Parar tudo (dados preservados)
+docker compose down
+
+# Reiniciar tudo do zero (apaga dados)
+docker compose down -v && rm -rf ./data/postgres && docker compose up --build -d
+```
+
+### Configuração MCP para Claude Desktop
+
+Adicione ao seu arquivo de configuração MCP:
+
+```json
+{
+  "mcpServers": {
+    "tibiawiki": {
+      "url": "http://localhost:8000/sse"
+    }
+  }
+}
+```
+
+---
+
 ## O que faz
 
 1. **Baixa** todas as páginas do TibiaWiki via MediaWiki API (wikitext bruto)
@@ -33,56 +90,6 @@ src/
 migrations/         # 27 arquivos SQL numerados
 tests/              # pytest + fixtures de wikitext
 ```
-
-## Setup
-
-### Pré-requisitos
-
-- Docker e Docker Compose **ou** Python 3.12 + PostgreSQL 16
-
-### Com Docker (recomendado)
-
-```bash
-git clone <repo>
-cd tibiawiki_downloader
-
-# Sobe o banco, executa o downloader e inicia o servidor MCP
-docker-compose up
-```
-
-O Docker Compose sobe três serviços:
-| Serviço | Descrição | Porta |
-|---------|-----------|-------|
-| `db` | PostgreSQL | 5432 |
-| `importer` | Executa `src/main.py` | — |
-| `mcp` | Servidor MCP | 8000 |
-
-### Local (sem Docker)
-
-```bash
-# 1. Copie e edite o arquivo de configuração
-cp .env.example .env
-
-# 2. Instale as dependências
-pip install -r requirements.txt
-
-# 3. Execute o downloader (pode demorar dependendo do tamanho da wiki)
-python -m src.main
-
-# 4. Suba o servidor MCP
-python -m src.mcp_server
-```
-
-## Configuração
-
-Todas as configurações são feitas via variáveis de ambiente (arquivo `.env`):
-
-| Variável | Padrão | Descrição |
-|----------|--------|-----------|
-| `DATABASE_URL` | `postgresql://tibiawiki:tibiawiki@localhost:5432/tibiawiki` | Conexão ao PostgreSQL |
-| `WIKI_API_URL` | `https://www.tibiawiki.com.br/api.php` | Endpoint da API MediaWiki |
-| `RATE_LIMIT_SECONDS` | `1` | Delay entre requisições (segundos) |
-| `BATCH_SIZE` | `50` | Páginas por requisição (máx. 50) |
 
 ## Como funciona
 
@@ -137,7 +144,21 @@ Exemplos de ferramentas disponíveis:
 - `find_npcs_selling` — NPCs que vendem determinado item
 - `search_quests` — busca quests por nome ou área
 
-Para conectar um cliente MCP (ex: Claude Desktop), use o `mcp_config_example.json` como referência.
+## Setup local (sem Docker)
+
+```bash
+# 1. Copie e edite o arquivo de configuração
+cp .env.example .env
+
+# 2. Instale as dependências
+pip install -r requirements.txt
+
+# 3. Execute o downloader
+python -m src.main
+
+# 4. Suba o servidor MCP
+python -m src.mcp_server
+```
 
 ## Testes
 
