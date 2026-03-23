@@ -166,6 +166,48 @@ def test_item_parser():
     assert result["weight"] == 85.0
     assert result["imbuement_slots"] == 3
     assert result["classification"] == 4
+    # body_position derived from primary_type "Armaduras"
+    assert result["body_position"] == "armor"
+
+
+def test_item_parser_portuguese_fields():
+    """Test parsing with real Portuguese wiki field names."""
+    content = read_fixture("falcon_longsword.txt")
+    result = items.parse(77777, content)
+    assert result is not None
+    assert result["name"] == "Falcon Longsword"
+    assert result["attack"] == 52
+    assert result["defense"] == 33
+    assert result["hit_percent"] == 3
+    assert result["imbuement_slots"] == 3
+    assert result["classification"] == 4
+    assert result["max_tier"] == 3
+    assert result["level_required"] == 300
+    assert result["body_position"] == "weapon"
+    assert result["item_type"] == "Sword"
+    assert result["enchantable"] is False
+    assert "Sword Fighting" in result["skillboost"]
+    assert "+38 Earth" in result["element_attack"]
+    assert "Grand Master Oberon" in result["dropped_by"]
+    assert result["npc_value"] == 39000
+    assert result["flavor_text"] is not None
+
+
+def test_item_body_position_derivation():
+    """Test that body_position is correctly derived from primary_type."""
+    from src.parser.items import PRIMARY_TYPE_TO_BODY_POSITION
+
+    assert PRIMARY_TYPE_TO_BODY_POSITION["Armaduras"] == "armor"
+    assert PRIMARY_TYPE_TO_BODY_POSITION["Capacetes"] == "helmet"
+    assert PRIMARY_TYPE_TO_BODY_POSITION["Calças"] == "legs"
+    assert PRIMARY_TYPE_TO_BODY_POSITION["Botas"] == "boots"
+    assert PRIMARY_TYPE_TO_BODY_POSITION["Escudos"] == "shield"
+    assert PRIMARY_TYPE_TO_BODY_POSITION["Espadas"] == "weapon"
+    assert PRIMARY_TYPE_TO_BODY_POSITION["Machados"] == "weapon"
+    assert PRIMARY_TYPE_TO_BODY_POSITION["Clavas"] == "weapon"
+    assert PRIMARY_TYPE_TO_BODY_POSITION["Anéis"] == "ring"
+    assert PRIMARY_TYPE_TO_BODY_POSITION["Amuletos e Colares"] == "amulet"
+    assert PRIMARY_TYPE_TO_BODY_POSITION["Munição"] == "ammo"
 
 
 def test_mount_parser():

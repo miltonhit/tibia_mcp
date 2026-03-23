@@ -63,6 +63,18 @@ def generate_tags(table, record):
             tags.append("valuable")
         if record.get("item_class"):
             tags.append(record["item_class"].lower().replace(" ", "_"))
+        if record.get("level_required") and record["level_required"] >= 200:
+            tags.append("high_level_req")
+        if record.get("enchantable"):
+            tags.append("enchantable")
+        if record.get("resist"):
+            tags.append("has_resistance")
+        if record.get("skillboost"):
+            tags.append("has_skillboost")
+        if record.get("augments"):
+            tags.append("has_augments")
+        if record.get("element_attack"):
+            tags.append("elemental_weapon")
 
     elif table == "spells":
         if record.get("subclass"):
@@ -217,10 +229,16 @@ def generate_summary(table, record):
             parts.append(f"Atk:{record['attack']}")
         if record.get("defense"):
             parts.append(f"Def:{record['defense']}")
+        if record.get("level_required"):
+            parts.append(f"Lvl:{record['level_required']}")
         if record.get("npc_value"):
             parts.append(f"NPC:{record['npc_value']}gp")
         if record.get("classification"):
             parts.append(f"Tier:{record['classification']}")
+        if record.get("resist"):
+            parts.append(f"Res:{record['resist'][:30]}")
+        if record.get("skillboost"):
+            parts.append(f"Skill:{record['skillboost'][:30]}")
         return " | ".join(parts) if parts else record.get("item_class", "")
 
     elif table == "spells":
@@ -372,7 +390,7 @@ def generate_summary(table, record):
         if record.get("update_version"):
             parts.append(f"v{record['update_version']}")
         if record.get("update_season"):
-            parts.append(record["update_season"])
+            parts.append(str(record["update_season"]))
         return " | ".join(parts) if parts else ""
 
     elif table == "fansites":

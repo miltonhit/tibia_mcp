@@ -70,6 +70,18 @@ def build_searchable_text(table, row):
             parts.append(f"Attack: {row['attack']}")
         if row.get("defense"):
             parts.append(f"Defense: {row['defense']}")
+        if row.get("level_required"):
+            parts.append(f"Level required: {row['level_required']}")
+        if row.get("resist"):
+            parts.append(f"Resistance: {row['resist']}")
+        if row.get("skillboost"):
+            parts.append(f"Skill boost: {row['skillboost']}")
+        if row.get("element_attack"):
+            parts.append(f"Element: {row['element_attack']}")
+        if row.get("damage") and row.get("damage_type"):
+            parts.append(f"Damage: {row['damage']} {row['damage_type']}")
+        if row.get("augments"):
+            parts.append(f"Augments: {row['augments']}")
         if row.get("npc_value"):
             parts.append(f"NPC value: {row['npc_value']} gold")
         if row.get("notes"):

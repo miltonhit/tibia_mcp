@@ -7,6 +7,7 @@ Compact mode by default to minimize context usage.
 
 import json
 import logging
+import os
 
 from mcp.server.fastmcp import FastMCP
 import psycopg2
@@ -17,7 +18,7 @@ from src.config import DATABASE_URL
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("TibiaWiki", instructions="""
+mcp = FastMCP("TibiaWiki", host=os.getenv("MCP_HOST", "127.0.0.1"), instructions="""
 You have access to a comprehensive TibiaWiki database (tibiawiki.com.br).
 Covers ALL Tibia MMORPG content: creatures, items, spells, NPCs, quests,
 achievements, mounts, outfits, imbuements, hunts, books, buildings, worlds,
@@ -39,7 +40,7 @@ runes, world quests, world changes, familiars, tasks, updates, fansites.
 
 4. USE SMART TOOLS for complex cross-entity questions:
    -> creature_full_info(name) - stats + loot + hunts + sell prices
-   -> where_to_get_item(name) - drops + NPC shops
+   -> where_to_get_item(name) - drops + NPC shops + quest rewards
    -> where_to_sell_item(name) - NPCs that buy it
    -> recommend_hunt(level, vocation) - best hunts for your level
    -> profit_analysis(creature) - estimated gold/kill
@@ -58,8 +59,26 @@ runes, world quests, world changes, familiars, tasks, updates, fansites.
 7. CUSTOM QUERIES:
    -> query_database(sql) - raw SQL SELECT for anything else
 
+8. RANK & EXPLORE:
+   -> rank_entities(type, sort_by) - top items by price, strongest creatures, best armor, etc.
+
 IMPORTANT: ALWAYS start with compact search. Only get_entity for 1-2 specific
 entities. Never request full details on broad queries — it wastes context.
+
+## QUICK ANSWERS FOR COMMON QUESTIONS:
+- "Most expensive items" -> rank_entities("items", "npc_value")
+- "Strongest creatures" -> rank_entities("creatures", "exp") or rank_entities("creatures", "hp")
+- "Best weapons" -> rank_entities("items", "attack")
+- "Best armor" -> rank_entities("items", "armor", filter_column="body_position", filter_value="armor")
+- "What drops item X" -> where_to_get_item(X)
+- "Where to sell item X" -> where_to_sell_item(X)
+- "Hunting spots for level N" -> recommend_hunt(N, vocation)
+
+## COMMON MISTAKES TO AVOID:
+- items.value is TEXT (raw wiki), NOT a price. Use items.npc_value (INTEGER) for gold prices.
+- items.sell_to contains NPC names, NOT a price column.
+- npc_trades view has ~43 rows (very incomplete). Use items.npc_value directly for prices.
+- Creature _mod columns are percentages: 100=normal, >100=weak, 0=immune.
 """)
 
 
@@ -74,7 +93,10 @@ def _query(sql, params=None, limit=20):
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute(sql, params or ())
+            if params:
+                cur.execute(sql, params)
+            else:
+                cur.execute(sql)
             rows = cur.fetchmany(limit)
             return [dict(r) for r in rows]
     finally:
@@ -117,7 +139,7 @@ def _has_column(table_name, column_name):
 # Compact columns per table — name + 2-4 key fields for search results
 COMPACT_COLUMNS = {
     "creatures": ["name", "hp", "exp", "creature_class", "primary_type", "summary"],
-    "items": ["name", "item_class", "primary_type", "armor", "attack", "defense", "npc_value", "summary"],
+    "items": ["name", "item_class", "primary_type", "body_position", "armor", "attack", "defense", "level_required", "npc_value", "summary"],
     "spells": ["name", "words", "subclass", "mana", "mag_level", "vocations", "magic_type"],
     "npcs": ["name", "job", "city", "subarea"],
     "quests": ["name", "level", "reward", "location", "premium"],
@@ -139,6 +161,78 @@ COMPACT_COLUMNS = {
 }
 
 ALL_ENTITY_TABLES = list(COMPACT_COLUMNS.keys())
+
+# Key columns with semantic hints — included in describe_tables() overview
+# Format: (column_name, type, hint)
+TABLE_COLUMN_HINTS = {
+    "creatures": [
+        ("name", "TEXT", "creature name"),
+        ("hp", "INT", "hit points"),
+        ("exp", "INT", "experience on kill"),
+        ("creature_class", "TEXT", "category: Demons, Dragons, Undead, etc."),
+        ("primary_type", "TEXT", "sub-category within class"),
+        ("physical_mod / fire_mod / ice_mod / earth_mod / energy_mod / holy_mod / death_mod", "INT",
+         "damage modifier %: 100=normal, >100=weak, 0=immune"),
+    ],
+    "items": [
+        ("name", "TEXT", "item name"),
+        ("npc_value", "INT", "gold price NPCs pay — THE price column for value queries"),
+        ("value", "TEXT", "raw wiki text, NOT a clean number — do NOT use for prices"),
+        ("sell_to", "TEXT", "NPC names who buy it — NOT a price column"),
+        ("buy_from", "TEXT", "NPC names who sell it — NOT a price column"),
+        ("item_class", "TEXT", "category: Swords, Axes, Armors, Helmets, etc."),
+        ("body_position", "TEXT", "equipment slot: helmet, armor, legs, boots, shield, weapon, ring, amulet, ammo"),
+        ("armor", "INT", "armor value (for armor pieces)"),
+        ("attack", "INT", "attack value (for weapons)"),
+        ("defense", "INT", "defense value"),
+        ("classification", "INT", "tier 0-4 (higher = better)"),
+        ("level_required", "INT", "minimum level to equip"),
+        ("resist", "TEXT", "resistance bonuses e.g. 'Physical +12%, Death +6%'"),
+        ("skillboost", "TEXT", "skill bonuses e.g. 'Shielding +4'"),
+        ("damage_type", "TEXT", "damage element for wands/rods"),
+        ("element_attack", "TEXT", "elemental attack on weapons e.g. '+25 Fire'"),
+        ("augments", "TEXT", "augment bonuses on endgame items"),
+    ],
+    "spells": [
+        ("name", "TEXT", "spell name"),
+        ("words", "TEXT", "incantation words"),
+        ("mana", "INT", "mana cost"),
+        ("mag_level", "INT", "magic level required"),
+        ("vocations", "TEXT", "which vocations can use it"),
+    ],
+    "hunts": [
+        ("name", "TEXT", "hunting place name"),
+        ("level", "INT", "recommended level"),
+        ("exp_rating", "INT", "exp quality 1-5"),
+        ("loot_rating", "INT", "loot quality 1-5"),
+        ("vocation", "TEXT", "recommended vocations"),
+        ("city", "TEXT", "nearest city"),
+    ],
+    "npcs": [
+        ("name", "TEXT", "NPC name"),
+        ("job", "TEXT", "NPC role/job"),
+        ("city", "TEXT", "city location"),
+        ("buys", "TEXT", "comma-separated item names NPC buys"),
+        ("sells", "TEXT", "comma-separated item names NPC sells"),
+    ],
+    "creature_drops": [
+        ("creature_name", "TEXT", "creature that drops the item"),
+        ("item_name", "TEXT", "dropped item name"),
+        ("npc_value", "INT", "gold price NPCs pay for this item"),
+        ("rarity", "TEXT", "common / uncommon / semi_rare / rare / very_rare"),
+    ],
+    "npc_trades": [
+        ("npc_name", "TEXT", "NPC name"),
+        ("item_name", "TEXT", "traded item name"),
+        ("npc_value", "INT", "gold price"),
+        ("npc_sells", "BOOL", "true if NPC sells this item"),
+        ("npc_buys", "BOOL", "true if NPC buys this item"),
+        ("city", "TEXT", "NPC city"),
+    ],
+}
+
+# Merge view names into entity table list for rank_entities support
+VIEW_TABLES = ["creature_drops", "npc_trades", "hunt_creatures", "quest_bosses"]
 
 
 def _compact_select(table):
@@ -216,10 +310,16 @@ def describe_tables(table_name: str = "") -> str:
                 try:
                     cur.execute(f"SELECT count(*) as cnt FROM {table}")
                     cnt = cur.fetchone()["cnt"]
-                    stats[table] = {
+                    entry = {
                         "rows": cnt,
                         "description": table_descriptions.get(table, ""),
                     }
+                    if table in TABLE_COLUMN_HINTS:
+                        entry["key_columns"] = [
+                            {"column": c, "type": t, "hint": h}
+                            for c, t, h in TABLE_COLUMN_HINTS[table]
+                        ]
+                    stats[table] = entry
                 except Exception:
                     conn.rollback()
     finally:
@@ -239,7 +339,13 @@ def describe_tables(table_name: str = "") -> str:
                 try:
                     cur.execute(f"SELECT count(*) as cnt FROM {view}")
                     cnt = cur.fetchone()["cnt"]
-                    stats[f"[view] {view}"] = {"rows": cnt, "description": desc}
+                    view_entry = {"rows": cnt, "description": desc}
+                    if view in TABLE_COLUMN_HINTS:
+                        view_entry["key_columns"] = [
+                            {"column": c, "type": t, "hint": h}
+                            for c, t, h in TABLE_COLUMN_HINTS[view]
+                        ]
+                    stats[f"[view] {view}"] = view_entry
                 except Exception:
                     conn.rollback()
     finally:
@@ -560,7 +666,7 @@ def creature_full_info(name: str, compact: bool = False) -> str:
 
 @mcp.tool()
 def where_to_get_item(item_name: str) -> str:
-    """Find all ways to obtain an item: creature drops and NPC shops.
+    """Find all ways to obtain an item: creature drops, NPC shops, and quest rewards.
 
     Args:
         item_name: Item name (e.g. "Magic Plate Armor", "Dragon Scale")
@@ -597,6 +703,13 @@ def where_to_get_item(item_name: str) -> str:
             (real_name,), limit=20
         )
         result["sold_by_npcs"] = sellers
+
+    quest_rewards = _query(
+        "SELECT name, level, level_req, location, reward "
+        "FROM quests WHERE reward ILIKE %s ORDER BY name",
+        (f"%{real_name}%",), limit=20
+    )
+    result["quest_rewards"] = quest_rewards
 
     return json.dumps(result, ensure_ascii=False, indent=2, default=str)
 
@@ -776,6 +889,7 @@ def items_for_vocation(vocation: str, body_position: str = "") -> str:
 
     rows = _query(
         f"SELECT name, item_class, body_position, armor, attack, defense, "
+        f"level_required, resist, skillboost, "
         f"npc_value, imbuement_slots, classification "
         f"FROM items WHERE {where} "
         f"AND (armor IS NOT NULL OR attack IS NOT NULL OR defense IS NOT NULL) "
@@ -948,20 +1062,185 @@ def semantic_search(question: str, entity_type: str = "", limit: int = 5) -> str
     return f"(Semantic search unavailable, using keyword fallback)\n\n{fallback}"
 
 
+# ─── RANKING TOOLS ─────────────────────────────────────────────────
+
+# Compact columns for views (used by rank_entities)
+VIEW_COMPACT_COLUMNS = {
+    "creature_drops": ["creature_name", "item_name", "npc_value", "rarity"],
+    "npc_trades": ["npc_name", "item_name", "npc_value", "npc_sells", "npc_buys", "city"],
+    "hunt_creatures": ["hunt_name", "creature_name", "creature_hp", "creature_exp"],
+    "quest_bosses": ["quest_name", "creature_name"],
+}
+
+NUMERIC_TYPES = {"integer", "bigint", "smallint", "numeric", "real", "double precision"}
+
+
+def _is_numeric_column(table, column):
+    """Check if a column exists in the table and has a numeric type."""
+    rows = _query(
+        "SELECT data_type FROM information_schema.columns "
+        "WHERE table_name = %s AND column_name = %s",
+        (table, column), limit=1,
+    )
+    if not rows:
+        # Also check materialized view columns via pg_attribute
+        rows = _query(
+            "SELECT format_type(a.atttypid, a.atttypmod) as data_type "
+            "FROM pg_attribute a JOIN pg_class c ON a.attrelid = c.oid "
+            "WHERE c.relname = %s AND a.attname = %s AND a.attnum > 0",
+            (table, column), limit=1,
+        )
+    if not rows:
+        return False
+    return rows[0]["data_type"].lower() in NUMERIC_TYPES
+
+
+@mcp.tool()
+def rank_entities(
+    entity_type: str,
+    sort_by: str,
+    limit: int = 20,
+    order: str = "desc",
+    min_value: int = None,
+    max_value: int = None,
+    filter_column: str = "",
+    filter_value: str = "",
+) -> str:
+    """Rank entities by a numeric column. Best for "most expensive", "strongest", "highest exp", etc.
+
+    Examples:
+      rank_entities("items", "npc_value") -> most expensive items
+      rank_entities("creatures", "exp") -> highest exp creatures
+      rank_entities("creatures", "hp") -> tankiest creatures
+      rank_entities("items", "armor", filter_column="body_position", filter_value="armor") -> best body armors
+      rank_entities("items", "attack", filter_column="item_class", filter_value="Espadas") -> best swords
+      rank_entities("creature_drops", "npc_value") -> most valuable loot drops
+
+    Note: This wiki is in Portuguese. Filter values use PT names (e.g. "Espadas" not "Swords",
+    "Machados" not "Axes", "Armas" for weapons). Use search() first if unsure about category names.
+
+    Args:
+        entity_type: Table or view name (creatures, items, spells, hunts, creature_drops, etc.)
+        sort_by: Numeric column to rank by (npc_value, exp, hp, armor, attack, defense, mana, etc.)
+        limit: Number of results (default 20, max 50)
+        order: "desc" (highest first, default) or "asc" (lowest first)
+        min_value: Optional minimum value filter on sort_by column
+        max_value: Optional maximum value filter on sort_by column
+        filter_column: Optional column to filter on (e.g. "item_class", "creature_class", "body_position")
+        filter_value: Value to match for filter_column (case-insensitive partial match)
+    """
+    # Validate entity_type
+    valid_tables = ALL_ENTITY_TABLES + VIEW_TABLES
+    if entity_type not in valid_tables:
+        return f"Unknown entity_type '{entity_type}'. Valid: {', '.join(valid_tables)}"
+
+    # Validate sort_by is numeric
+    if not _is_numeric_column(entity_type, sort_by):
+        return (f"Column '{sort_by}' is not a valid numeric column in '{entity_type}'. "
+                f"Use describe_tables('{entity_type}') to see available columns.")
+
+    # Validate filter_column if provided
+    if filter_column:
+        if not _has_column(entity_type, filter_column):
+            return f"Column '{filter_column}' does not exist in '{entity_type}'."
+
+    # Determine SELECT columns
+    compact = VIEW_COMPACT_COLUMNS.get(entity_type) or COMPACT_COLUMNS.get(entity_type, ["name"])
+    select_cols = list(compact)
+    if sort_by not in select_cols:
+        select_cols.append(sort_by)
+    valid_cols = [c for c in select_cols if _has_column(entity_type, c)]
+    if not valid_cols:
+        valid_cols = ["name", sort_by] if _has_column(entity_type, "name") else [sort_by]
+
+    # Build query with parameterized values
+    limit = min(max(1, limit), 50)
+    order_dir = "ASC" if order.lower() == "asc" else "DESC"
+
+    # Column and table names are validated above, safe to interpolate
+    where_clauses = [f"{sort_by} IS NOT NULL"]
+    params = []
+
+    if min_value is not None:
+        where_clauses.append(f"{sort_by} >= %s")
+        params.append(min_value)
+    if max_value is not None:
+        where_clauses.append(f"{sort_by} <= %s")
+        params.append(max_value)
+    if filter_column and filter_value:
+        where_clauses.append(f"{filter_column} ILIKE %s")
+        params.append(f"%{filter_value}%")
+
+    where_sql = " AND ".join(where_clauses)
+    sql = (f"SELECT {', '.join(valid_cols)} FROM {entity_type} "
+           f"WHERE {where_sql} ORDER BY {sort_by} {order_dir} LIMIT {limit}")
+
+    try:
+        rows = _query(sql, tuple(params), limit=limit)
+        return _format(rows)
+    except Exception as e:
+        return f"Query error: {e}"
+
+
 # ─── UTILITY TOOLS ─────────────────────────────────────────────────
 
 @mcp.tool()
 def query_database(sql_query: str) -> str:
     """Execute a read-only SQL SELECT on the TibiaWiki database.
 
-    Tables: raw_pages, creatures, items, spells, npcs, quests, achievements,
-    mounts, outfits, imbuements, hunts, books, buildings, worlds, runes,
-    world_quests, world_changes, familiars, tasks, updates, fansites, positions.
+    TABLES AND KEY COLUMNS:
 
-    Views: creature_drops, npc_trades, hunt_creatures, quest_bosses.
+    items (5000+ rows):
+      name TEXT, npc_value INTEGER (gold price NPCs pay — USE THIS for price queries),
+      value TEXT (raw wiki text, NOT a number — do NOT use for price!),
+      sell_to TEXT (NPC names who buy it — NOT a price!),
+      buy_from TEXT (NPC names who sell it — NOT a price!),
+      item_class TEXT, primary_type TEXT,
+      body_position TEXT (helmet/armor/legs/boots/shield/weapon/ring/amulet/ammo),
+      armor INTEGER, attack INTEGER, defense INTEGER, classification INTEGER (tier 0-4),
+      level_required INTEGER, resist TEXT, skillboost TEXT,
+      damage TEXT, damage_type TEXT, element_attack TEXT, augments TEXT,
+      mana INTEGER, range INTEGER, charges INTEGER, enchantable BOOLEAN,
+      imbuement_slots INTEGER, weight NUMERIC, voc_required TEXT,
+      tags TEXT[], summary TEXT
 
-    Columns of interest: most tables have name, page_id, tags[], summary, notes.
-    The positions table has: page_id, source_table, entity_name, x, y, z, context.
+    creatures (2000+ rows):
+      name TEXT, hp INTEGER, exp INTEGER, creature_class TEXT, primary_type TEXT,
+      speed INTEGER, armor INTEGER, physical_mod INTEGER, fire_mod INTEGER,
+      ice_mod INTEGER, earth_mod INTEGER, energy_mod INTEGER, holy_mod INTEGER,
+      death_mod INTEGER (damage modifiers: 100=normal, >100=weak, 0=immune),
+      tags TEXT[], summary TEXT
+
+    spells: name, words, mana INTEGER, mag_level INTEGER, vocations TEXT, magic_type TEXT
+    npcs: name, job, city, subarea, buys TEXT (item names), sells TEXT (item names)
+    hunts: name, level INTEGER, exp_rating INTEGER (1-5), loot_rating INTEGER (1-5), vocation, city
+    quests: name, level INTEGER, reward TEXT, location TEXT, premium BOOLEAN
+    positions: page_id, source_table, entity_name, x INTEGER, y INTEGER, z INTEGER, context
+
+    VIEWS (materialized):
+      creature_drops (16000+ rows): creature_name, item_name, npc_value INTEGER, rarity TEXT
+        (rarity values: common, uncommon, semi_rare, rare, very_rare)
+      npc_trades (~43 rows — INCOMPLETE, prefer items.npc_value for prices):
+        npc_name, item_name, npc_value INTEGER, npc_sells BOOLEAN, npc_buys BOOLEAN, city
+      hunt_creatures: hunt_name, creature_name, creature_hp, creature_exp
+      quest_bosses: quest_name, creature_name
+
+    Other tables: achievements, mounts, outfits, imbuements, books, buildings,
+    worlds, runes, world_quests, world_changes, familiars, tasks, updates, fansites.
+    Most have: name, page_id, tags[], summary, notes.
+
+    EXAMPLE QUERIES:
+      Most expensive items: SELECT name, npc_value FROM items WHERE npc_value IS NOT NULL ORDER BY npc_value DESC LIMIT 20
+      Strongest creatures: SELECT name, hp, exp FROM creatures ORDER BY exp DESC LIMIT 20
+      Best loot drops: SELECT creature_name, item_name, npc_value, rarity FROM creature_drops WHERE npc_value > 1000 ORDER BY npc_value DESC LIMIT 20
+      Items by type: SELECT name, armor, npc_value FROM items WHERE body_position = 'armor' AND armor IS NOT NULL ORDER BY armor DESC LIMIT 20
+      Creatures weak to fire: SELECT name, hp, exp, fire_mod FROM creatures WHERE fire_mod > 100 ORDER BY fire_mod DESC LIMIT 20
+
+    WARNINGS:
+      - items.value is TEXT (raw wiki), NOT a price. Use items.npc_value (INTEGER).
+      - items.sell_to / buy_from contain NPC names, NOT prices.
+      - npc_trades has only ~43 rows (very incomplete). Query items.npc_value directly.
+      - Creature _mod columns: 100=neutral, >100=weak, <100=resistant, 0=immune.
 
     Args:
         sql_query: A SELECT SQL query (read-only, max 30 results)

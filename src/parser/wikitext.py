@@ -80,12 +80,17 @@ def extract_infobox(content, template_name):
     return result
 
 
+_HTML_PIPE_OPEN = re.compile(r'<(gallery|tabber|tabview)\b[^>]*>', re.IGNORECASE)
+_HTML_PIPE_CLOSE = re.compile(r'</(gallery|tabber|tabview)\s*>', re.IGNORECASE)
+
+
 def _split_by_top_level_pipe(text):
-    """Split text by | characters that are not inside {{ }} or [[ ]]."""
+    """Split text by | characters that are not inside {{ }}, [[ ]], or HTML block tags."""
     parts = []
     current = []
     depth_brace = 0
     depth_bracket = 0
+    depth_html = 0
     i = 0
 
     while i < len(text):
@@ -111,7 +116,20 @@ def _split_by_top_level_pipe(text):
             current.append("]]")
             i += 2
             continue
-        elif ch == "|" and depth_brace == 0 and depth_bracket == 0:
+        elif ch == "<":
+            m = _HTML_PIPE_OPEN.match(text, i)
+            if m:
+                depth_html += 1
+                current.append(m.group())
+                i = m.end()
+                continue
+            m = _HTML_PIPE_CLOSE.match(text, i)
+            if m:
+                depth_html = max(0, depth_html - 1)
+                current.append(m.group())
+                i = m.end()
+                continue
+        elif ch == "|" and depth_brace == 0 and depth_bracket == 0 and depth_html == 0:
             parts.append("".join(current))
             current = []
             i += 1
@@ -187,7 +205,11 @@ def parse_int(value):
     if not v:
         return None
     try:
-        return int(v)
+        result = int(v)
+        # Clamp to PostgreSQL INTEGER range
+        if result > 2147483647 or result < -2147483648:
+            return None
+        return result
     except ValueError:
         return None
 
