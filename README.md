@@ -4,14 +4,18 @@ Ferramenta para baixar, parsear e indexar todo o conteúdo do [TibiaWiki](https:
 
 ## Quick Start
 
-A maneira mais rápida de subir tudo é usando o **Claude Code** com a skill `/start`:
+A maneira mais rápida de subir tudo é usando o [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (a CLI oficial da Anthropic). Este projeto inclui uma **skill customizada** `/start` que automatiza toda a inicialização:
+
+1. Abra o terminal na raiz do projeto
+2. Inicie o Claude Code: `claude`
+3. Execute a skill:
 
 ```
 /start
 ```
 
-Isso irá automaticamente:
-1. Verificar todos os pré-requisitos (Docker, portas livres, etc.)
+A skill irá automaticamente:
+1. Verificar todos os pré-requisitos (Docker, Docker Compose, portas livres, etc.)
 2. Criar o diretório de dados persistentes para o PostgreSQL
 3. Subir o banco, executar o crawler e iniciar o servidor MCP
 4. Exibir a URL do MCP pronta para uso
@@ -20,6 +24,7 @@ Isso irá automaticamente:
 
 ### Pré-requisitos
 
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) instalado (`npm install -g @anthropic-ai/claude-code`)
 - [Docker](https://docs.docker.com/get-docker/) e Docker Compose V2
 - Portas **5432** (PostgreSQL) e **8000** (MCP) livres
 
