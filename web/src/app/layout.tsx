@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Press_Start_2P, VT323, Inter } from "next/font/google";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 
 const pressStart = Press_Start_2P({
   weight: "400",
@@ -43,6 +44,7 @@ export default function RootLayout({
     >
       <body className="min-h-screen bg-tibia-dark text-tibia-text font-body antialiased">
         {children}
+        <Analytics />
       </body>
     </html>
   );
