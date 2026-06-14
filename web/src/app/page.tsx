@@ -1,4 +1,5 @@
 import Hero from "@/components/Hero";
+import GymRankBanner from "@/components/GymRankBanner";
 import WhatIsThis from "@/components/WhatIsThis";
 import ToolsShowcase from "@/components/ToolsShowcase";
 import UsageExamples from "@/components/UsageExamples";
@@ -10,6 +11,7 @@ export default function Home() {
   return (
     <>
       <Hero />
+      <GymRankBanner />
       <WhatIsThis />
       <ToolsShowcase />
       <UsageExamples />
